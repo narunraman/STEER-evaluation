@@ -1,0 +1,13 @@
+{
+    "task_name": "independence_risk",
+    "task_path": "elements/independence_risk/",
+    "num_sample": 500,
+    "local": 1,
+    "resume_running": 0,
+    "model_path": "/home/narunram/scratch/models/",
+    "models": {
+        "gpt-35": {},
+        "gpt-4": {}
+    },
+    "output_path": "results/independence_risk/"
+}

@@ -1,0 +1,8 @@
+__pycache__/*
+.DS_Store
+testbench.ipynb
+results/*
+elements/*
+logs/*
+visualization_utils.py
+visualizer.py
