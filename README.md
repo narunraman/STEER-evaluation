@@ -26,22 +26,30 @@ This repository contains the STEER-evaluation project, which is a benchmarking t
         "task_name": <task-name>,
         "task_path": <path-to-elements-directory>,
         "num_sample": <number of questions to sample>,
-        "models": {<name-of-local-model|opensource-api-modelname>: <number-of-gpus>},
+        "models": {<name-of-local-model|opensource-api-modelname>: {"num_gpus": <number-of-gpus>}},
         "output_path": <save-directory>
     }
     ```
 
-2. Run the benchmarking script:
-    
-    Currently only supports api-based models:
+2. Run the evaluation script:
 
+    For api-based models: 
     ```bash
     python run_script.py -t independence_risk -api
     ```
 
-    NOTE: the script will look at the `configurations/` and `elements/` directories for files, but can customize to whichever directory by setting the flags in the command line.
+    For local models:
+    ```bash
+    python run_script.py -t independence_risk
+    ```
 
-3. View the logs in the generated `grouped_counts.csv` file in `logs/`
+    The script will default to look at `./configurations/` and `./elements/` directories for files, but you can customize to whichever directory by setting the flags in the command line.
+    ```bash
+    python run_script.py -t independence_risk -e /path/to/elements/ -c /path/to/configurations
+    ```
+    
+
+3. View the logs in the `grouped_counts.csv` file in `logs/`
 
 
 ## Contact
