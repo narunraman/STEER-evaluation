@@ -6,7 +6,7 @@ import torch
 import numpy as np
 # Local packages
 from utils.parsing_utils import remove_answer_letter
-from utils.utils import get_option_letter
+from utils.utils import get_option_letter, normalize_dict
 
 #########################################################################################
 #########################################################################################
@@ -49,7 +49,7 @@ def normalize_probs(prob_dict):
     return [prob_dict[key] for key in sorted(prob_dict.keys())]
 
 
-def get_mc_separate(model, tokenizer, text, options, device):
+def get_mc_separate(model, tokenizer, text, options, device, chat_type):
     """
     Process a multiple-choice question by appending each option letter and getting the probability.
 
@@ -67,25 +67,71 @@ def get_mc_separate(model, tokenizer, text, options, device):
     option_probs = {}
     with torch.no_grad():
         for option in options:
-            option_text = f"{text} {option}"
-            option_ids = tokenizer(option_text, return_tensors="pt").to(device).input_ids
+            if chat_type == 'list':
+                option_text = {'role': 'user', 'content': text[-1]['content'] + option}
+                messages = text[:-1] + [option_text]
+                option_ids = tokenizer.apply_chat_template(messages, return_tensors="pt").to(device).input_ids
+            else:
+                option_text = f"{text} {option}"
+                option_ids = tokenizer(option_text, return_tensors="pt").to(device).input_ids
             outputs = model(option_ids)
 
             # Get logits of the last token produced for each option
             logits = outputs.logits[:, -1, :]
             probs = torch.nn.functional.softmax(logits, dim=-1)
 
-            # Assuming option is a single character and getting its probability
+            # Option is a single character and getting its probability
             option_id = tokenizer.encode(option, add_special_tokens=False)[-1]
             option_prob = probs[0, option_id]
 
             option_probs[option] = option_prob.item()
     
-    return max(option_probs, key=option_probs.get), normalize_probs(option_probs)
+    return max(option_probs, key=option_probs.get), normalize_dict(option_probs)
 
     
 
-def get_mc(model, tokenizer, text, options, device):
+def get_mc(model, tokenizer, text, options, device, chat_type):
+    """
+    Inspects the full distribution of the next tokens to select only those that are possible option letters.
+
+    Parameters:
+    - model: The loaded HuggingFace model.
+    - tokenizer: The corresponding tokenizer for the model.
+    - text: The MCQ text as a string.
+    - options: A list of strings representing the initial tokens of the options.
+
+    Returns:
+    - A dict with 'probabilities' containing the probability of each option's initial token,
+      and 'normalized_log_odds' containing the normalized log odds of these probabilities.
+    """
+    model.eval()
+    with torch.no_grad():
+        # Tokenize the input text
+        if chat_type == 'list':
+            input_ids = tokenizer.apply_chat_template(text, return_tensors="pt").to(device).input_ids
+        else:
+            input_ids = tokenizer.encode(text, return_tensors="pt").to(device)
+
+        # Get the model's output
+        outputs = model(input_ids)
+
+        # Get logits of the next token
+        logits = outputs.logits[:, -1, :]
+        probs = torch.nn.functional.softmax(logits, dim=-1)
+
+    # Map each option letter to its initial token and extract probability
+    option_probs = {}
+    # for option in options:
+    for i in range(len(options)):
+        option_token_id = tokenizer.encode(ascii_uppercase[i], add_special_tokens=False)[0]
+        option_prob = probs[0, option_token_id].item()
+        option_probs[ascii_uppercase[i]] = option_prob
+
+    # print(normalize_dict(option_probs))
+
+    return max(option_probs, key=option_probs.get), normalize_dict(option_probs)
+
+def get_mc_option(model, tokenizer, text, options, device, chat_type):
     """
     Inspects the full distribution of the next tokens to select only those that are possible options.
 
@@ -102,34 +148,32 @@ def get_mc(model, tokenizer, text, options, device):
     model.eval()
     with torch.no_grad():
         # Tokenize the input text
-        input_ids = tokenizer.encode(text, return_tensors="pt").to(device)
-        
-        # Prepare the inputs for the model
-        # TODO: need to figure this out (multi-gpu)
-        # inputs = {k: v.to(accelerator.device) for k, v in inputs.items()}
+        if chat_type == 'list':
+            input_ids = tokenizer.apply_chat_template(text, return_tensors="pt").to(device).input_ids
+        else:
+            input_ids = tokenizer.encode(text, return_tensors="pt").to(device)
 
         # Get the model's output
-        outputs = model(input_ids).to(device)
+        outputs = model(input_ids)
 
         # Get logits of the next token
         logits = outputs.logits[:, -1, :]
         probs = torch.nn.functional.softmax(logits, dim=-1)
 
-    # Map each option to its initial token and extract probability
+    # Map each option to its tokens and extract probability of the entire option text
     option_probs = {}
     for option in options:
-        option_token_id = tokenizer.encode(option, add_special_tokens=False).to(device)[0]  # Get initial token ID
-        option_prob = probs[0, option_token_id].item()
-        option_probs[option] = option_prob
+        if type(option) != str:
+            option = str(option)
+        option_token_ids = tokenizer.encode(option, add_special_tokens=False)
+        option_text = tokenizer.decode(option_token_ids, skip_special_tokens=True)
+        option_prob = probs[0, option_token_ids].prod().item()
+        option_probs[option_text] = option_prob
+
+    return max(option_probs, key=option_probs.get), normalize_dict(option_probs)
 
 
-
-    return max(option_probs, key=option_probs.get), normalize_probs(option_probs)
-
-
-
-
-def get_explanation(model, tokenizer, text, device, max_tokens=512):
+def get_explanation(model, tokenizer, text, device, chat_type, max_tokens=512):
     """
     Generates a response up to 512 tokens, using greedy sampling (temperature=0).
 
@@ -143,7 +187,10 @@ def get_explanation(model, tokenizer, text, device, max_tokens=512):
     - A string containing the generated sequence.
     """
     # Encode the input text
-    input_ids = tokenizer.encode(text, return_tensors="pt")
+    if chat_type == 'list':
+        input_ids = tokenizer.apply_chat_template(text, return_tensors="pt").to(device).input_ids
+    else:
+        input_ids = tokenizer.encode(text, return_tensors="pt")
     
     # Ensure the model is in evaluation mode
     model.eval()
@@ -160,13 +207,20 @@ def get_explanation(model, tokenizer, text, device, max_tokens=512):
     return generated_text
 
 
-def get_explanation_probs(model, tokenizer, context, text, options, device):
+def get_explanation_probs(model, tokenizer, context, text, options, device, chat_type):
     new_text = remove_answer_letter(text)
-    new_output, probs = get_mc(model, tokenizer, context + '\n' + new_text, options, device)
+    if chat_type == 'list':
+        prompt = context + {'role': 'assistant', 'content': new_text}
+    elif chat_type == 'textual':
+        prompt += f"Falcon: {new_text}"
+    else:
+        prompt = context + '\n' + new_text
+    new_output, probs = get_mc(model, tokenizer, prompt, options, device)
     return new_output, probs
 
 HF_RESPONSE = {
     'mc': get_mc,
+    'mc-option': get_mc_option,
     'mc-separate': get_mc_separate,
     'explanation': get_explanation,
 }
@@ -301,6 +355,10 @@ def get_correct(question_id, answers_df, permuted_answer):
     true_labels = get_true_labels(question_id, answers_df)
     return true_labels.index(1) == permuted_answer
 
+def get_random_acc(question_id, answers_df):
+    true_labels = get_true_labels(question_id, answers_df)
+    return sum(true_labels) / len(true_labels)
+
 def compute_ece(predicted_probs, true_labels, n_bins=10):
     """
     Computes the Expected Calibration Error (ECE) of a set of predictions.
@@ -343,3 +401,5 @@ def compute_ece(predicted_probs, true_labels, n_bins=10):
         ece += bin_error
     
     return ece
+
+# def get_random_acc()

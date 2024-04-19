@@ -1,0 +1,45 @@
+{
+    "task_name": "borda_voting",
+    "task_path": "/home/narunram/scratch/elements/borda_voting/",
+    "num_sample": 1000,
+    "model_path": "/home/narunram/scratch/models/",
+    "models": {
+        "models--tiiuae--falcon-7b": {
+            "num_gpus": 1
+        },
+        "models--tiiuae--falcon-7b-instruct": {
+            "num_gpus": 1
+        },
+        "models--meta-llama--Llama-2-13b-chat-hf": {
+            "num_gpus": 1
+        },
+        "models--chavinlo--alpaca-native": {
+            "num_gpus": 1
+        },
+        "models--meta-llama--Llama-2-7b-chat-hf": {
+            "num_gpus": 1
+        },
+        "models--mistralai--Mistral-7B-v0.1": {
+            "num_gpus": 1
+        },
+        "models--huggyllama--llama-7b": {
+            "num_gpus": 1
+        },
+        "models--meta-llama--Llama-2-7b-hf": {
+            "num_gpus": 1
+        },
+        "models--chavinlo--alpaca-13b": {
+            "num_gpus": 1
+        },
+        "models--mistralai--Mistral-7B-Instruct-v0.2": {
+            "num_gpus": 1
+        },
+        "models--meta-llama--Llama-2-13b-hf": {
+            "num_gpus": 1
+        },
+        "models--huggyllama--llama-13b": {
+            "num_gpus": 1
+        }
+    },
+    "output_path": "/home/narunram/scratch/llm_evaluation_results/"
+}

@@ -1,0 +1,24 @@
+{
+    "task_name": "best_response",
+    "task_path": "/home/narunram/scratch/elements/{task_name}/",
+    "num_sample": 1000,
+    "model_path": "/home/narunram/scratch/models/",
+    "models": {
+        "models--databricks--dbrx-base": {
+            "num_gpu": 1
+        },
+        "models--huggyllama--llama-65b": {
+            "num_gpu": 1
+        },
+        "models--ai21labs--Jamba-v0.1": {
+            "num_gpu": 1
+        },
+        "models--meta-llama--Llama-2-70b-hf": {
+            "num_gpu": 1
+        },
+        "models--meta-llama--Llama-2-70b-chat-hf": {
+            "num_gpu": 1
+        }
+    },
+    "output_path": "/home/narunram/scratch/llm_evaluation_results/"
+}

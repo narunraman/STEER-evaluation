@@ -81,6 +81,16 @@ def reconstruct_context(prefix, questions, outputs, chat_type):
     # For non-chat models
     return prefix + '\n' + '\n'.join([question + '\n' + output for output, question in zip(outputs, questions)])
 
+def append_question(context, question, chat_type):
+    if chat_type == 'list':
+        context.append({'role': 'user', 'content': question})
+    elif chat_type == 'textual':
+        context += f"User: {question}\n"
+    else:
+        context += '\n' + question
+    return context
+
+
 def shuffle_and_permute_options(options):
     """
     Shuffle the options DataFrame conditioned on a question_id

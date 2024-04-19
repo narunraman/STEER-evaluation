@@ -2,13 +2,14 @@
 import os
 from collections import defaultdict
 import json
+from itertools import product
 from string import ascii_uppercase
 # External packages
 import pandas as pd
 import torch
 
 def get_chat_type(model_name):
-    if 'gpt' in model_name.lower() or 'Llama-2-7b-chat-hf' in model_name.lower():
+    if 'gpt' in model_name.lower() or 'Llama-2-7b-chat-hf' in model_name.lower() or 'Mistral-7B' in model_name.lower():
         return 'list'
     elif 'falcon-7b-instruct' in model_name.lower():
         return 'textual'
@@ -97,4 +98,36 @@ def write_default_config(base_dir, task_name):
 
     with open(base_dir + task_name + '.json', 'w') as f:
         json.dump(config, f, indent = 4) 
-    
+
+class ParameterGrid:
+    def __init__(self, param_grid):
+        # Allow for either a single dictionary or a list of dictionaries
+        if isinstance(param_grid, dict):
+            self.param_grids = [param_grid]
+        elif isinstance(param_grid, list):
+            self.param_grids = param_grid
+        else:
+            raise ValueError("Parameter grid must be a dict or a list of dicts")
+
+        # Ensure that all values in each parameter grid are lists
+        for grid in self.param_grids:
+            for key in grid:
+                if not isinstance(grid[key], list):
+                    grid[key] = [grid[key]]
+
+    def __iter__(self):
+        # Iterate through each grid and yield the cartesian product of parameters
+        for grid in self.param_grids:
+            keys = grid.keys()
+            for values in product(*grid.values()):
+                yield dict(zip(keys, values))
+
+    def __len__(self):
+        # Sum of products of lengths of all lists in all grids
+        total_length = 0
+        for grid in self.param_grids:
+            from functools import reduce
+            from operator import mul
+            product_length = reduce(mul, (len(v) for v in grid.values()), 1)
+            total_length += product_length
+        return total_length

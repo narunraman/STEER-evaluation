@@ -1,0 +1,27 @@
+{
+    "task_name": "add_sub",
+    "task_path": "/home/narunram/scratch/elements/{task_name}/",
+    "num_sample": 1000,
+    "model_path": "/home/narunram/scratch/models/",
+    "models": {
+        "models--mistralai--Mixtral-8x7B-Instruct-v0.1": {
+            "num_gpu": 1
+        },
+        "models--mistralai--Mixtral-8x7B-v0.1": {
+            "num_gpu": 1
+        },
+        "models--tiiuae--falcon-40b": {
+            "num_gpu": 1
+        },
+        "models--huggyllama--llama-30b": {
+            "num_gpu": 1
+        },
+        "models--xai-org--grok-1": {
+            "num_gpu": 1
+        },
+        "models--tiiuae--falcon-40b-instruct": {
+            "num_gpu": 1
+        }
+    },
+    "output_path": "/home/narunram/scratch/llm_evaluation_results/"
+}
