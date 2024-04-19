@@ -43,10 +43,12 @@ This repository contains the STEER-evaluation project, which is a benchmarking t
     python run_script.py -t independence_risk
     ```
 
-    The script will default to look at `./configurations/` and `./elements/` directories for files, but you can customize to whichever directory by setting the flags in the command line.
+    The script will default to look at `./configurations/` and `./elements/` directories for files, but you can customize to whichever directory by setting the flags in the command line:
     ```bash
     python run_script.py -t independence_risk -e /path/to/elements/ -c /path/to/configurations
     ```
+
+    Or changing the ```ELEMENTS_DIR``` and ```CONFIG_DIR``` filepaths in ```run_script.py```.
     
 
 3. View the logs in the `grouped_counts.csv` file in `logs/`

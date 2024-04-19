@@ -34,6 +34,8 @@ from utils.inference_utils import dir_path, run_evaluation
 from utils.utils import get_input_paths
 from utils.logger_utils import JobLogger
 
+CONFIG_DIR = 'configurations/'
+ELEMENTS_DIR = 'elements/'
 
 def main(task_names, api, config_dir):
     """
@@ -71,13 +73,13 @@ def main(task_names, api, config_dir):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser('Instruction style')
     parser.add_argument('--task-name', '-t', type=str, help="Elements to evaluate")
-    parser.add_argument('--element-dir', '-e', type=dir_path, nargs='?', default='elements/', help="Path to where the elements database is kept")
-    parser.add_argument('--config-dir', '-c', type=dir_path, nargs='?', default='configurations/', help="Path to where the configurations are kept")
+    parser.add_argument('--elements-dir', '-e', type=dir_path, nargs='?', default=ELEMENTS_DIR, help="Path to where the elements database is kept")
+    parser.add_argument('--config-dir', '-c', type=dir_path, nargs='?', default=CONFIG_DIR, help="Path to where the configurations are kept")
     parser.add_argument('-api', action='store_true', help='Flag that runs inference on only api models')
     args = parser.parse_args()
     if args.task_name == 'all':
         assert os.path.exists(args.element_dir), 'Path to elements is not at current working directory, supply the directory with --element-dir'
-        elements = next(os.walk('elements/'))[1]
+        elements = next(os.walk(args.element_dir))[1]
         job_loggers = {element: JobLogger('logs', element) for element in elements}
         main(elements, args.api, args.config_dir)
     else:
