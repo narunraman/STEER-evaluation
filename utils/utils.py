@@ -9,9 +9,9 @@ import pandas as pd
 import torch
 
 def get_chat_type(model_name):
-    if 'gpt' in model_name.lower() or 'Llama-2-7b-chat-hf' in model_name.lower() or 'Mistral-7B' in model_name.lower():
+    if 'gpt' in model_name.lower() or 'chat' in model_name.lower() or ('mistralai' in model_name.lower() and 'instruct' in model_name.lower()):
         return 'list'
-    elif 'falcon-7b-instruct' in model_name.lower():
+    elif 'falcon' in model_name.lower() and 'instruct' in model_name.lower():
         return 'textual'
     return None
 
@@ -90,8 +90,9 @@ def write_default_config(base_dir, task_name):
         "resume_running": 0,
         "model_path": "/home/narunram/scratch/models/",
         "models": {
-            "gpt-35": {},
-            "gpt-4": {}
+            "gpt-35-turbo-1106": {},
+            "gpt-4-1106-preview": {},
+            "gpt-4": {},
         },
         "output_path": f"results/{task_name}/"
     }

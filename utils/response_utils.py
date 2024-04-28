@@ -49,7 +49,7 @@ def normalize_probs(prob_dict):
     return [prob_dict[key] for key in sorted(prob_dict.keys())]
 
 
-def get_mc_separate(model, tokenizer, text, options, device, chat_type):
+def get_mc_separate(model, tokenizer, text, option_letters, device, chat_type):
     """
     Process a multiple-choice question by appending each option letter and getting the probability.
 
@@ -57,7 +57,7 @@ def get_mc_separate(model, tokenizer, text, options, device, chat_type):
     - model: The loaded HuggingFace model.
     - tokenizer: The corresponding tokenizer for the model.
     - text: The MCQ text as a string.
-    - options: A list of strings representing the options.
+    - option_letters: A list of strings representing the option letters.
 
     Returns:
     - A dict with 'responses' containing the model's output for each option,
@@ -66,14 +66,14 @@ def get_mc_separate(model, tokenizer, text, options, device, chat_type):
     model.eval()
     option_probs = {}
     with torch.no_grad():
-        for option in options:
+        for option in option_letters:
             if chat_type == 'list':
                 option_text = {'role': 'user', 'content': text[-1]['content'] + option}
                 messages = text[:-1] + [option_text]
-                option_ids = tokenizer.apply_chat_template(messages, return_tensors="pt").to(device).input_ids
+                option_ids = tokenizer.apply_chat_template(messages, return_tensors="pt").to(device)
             else:
                 option_text = f"{text} {option}"
-                option_ids = tokenizer(option_text, return_tensors="pt").to(device).input_ids
+                option_ids = tokenizer.encode(option_text, return_tensors="pt").to(device)
             outputs = model(option_ids)
 
             # Get logits of the last token produced for each option
@@ -90,7 +90,7 @@ def get_mc_separate(model, tokenizer, text, options, device, chat_type):
 
     
 
-def get_mc(model, tokenizer, text, options, device, chat_type):
+def get_mc(model, tokenizer, text, option_letters, device, chat_type):
     """
     Inspects the full distribution of the next tokens to select only those that are possible option letters.
 
@@ -98,7 +98,7 @@ def get_mc(model, tokenizer, text, options, device, chat_type):
     - model: The loaded HuggingFace model.
     - tokenizer: The corresponding tokenizer for the model.
     - text: The MCQ text as a string.
-    - options: A list of strings representing the initial tokens of the options.
+    - option_letters: A list of strings of the option letters.
 
     Returns:
     - A dict with 'probabilities' containing the probability of each option's initial token,
@@ -108,7 +108,7 @@ def get_mc(model, tokenizer, text, options, device, chat_type):
     with torch.no_grad():
         # Tokenize the input text
         if chat_type == 'list':
-            input_ids = tokenizer.apply_chat_template(text, return_tensors="pt").to(device).input_ids
+            input_ids = tokenizer.apply_chat_template(text, return_tensors="pt").to(device)
         else:
             input_ids = tokenizer.encode(text, return_tensors="pt").to(device)
 
@@ -121,13 +121,10 @@ def get_mc(model, tokenizer, text, options, device, chat_type):
 
     # Map each option letter to its initial token and extract probability
     option_probs = {}
-    # for option in options:
-    for i in range(len(options)):
-        option_token_id = tokenizer.encode(ascii_uppercase[i], add_special_tokens=False)[0]
+    for option in option_letters:
+        option_token_id = tokenizer.encode(option, add_special_tokens=False)[0]
         option_prob = probs[0, option_token_id].item()
-        option_probs[ascii_uppercase[i]] = option_prob
-
-    # print(normalize_dict(option_probs))
+        option_probs[option] = option_prob
 
     return max(option_probs, key=option_probs.get), normalize_dict(option_probs)
 
@@ -149,7 +146,7 @@ def get_mc_option(model, tokenizer, text, options, device, chat_type):
     with torch.no_grad():
         # Tokenize the input text
         if chat_type == 'list':
-            input_ids = tokenizer.apply_chat_template(text, return_tensors="pt").to(device).input_ids
+            input_ids = tokenizer.apply_chat_template(text, return_tensors="pt").to(device)
         else:
             input_ids = tokenizer.encode(text, return_tensors="pt").to(device)
 
@@ -188,7 +185,7 @@ def get_explanation(model, tokenizer, text, device, chat_type, max_tokens=512):
     """
     # Encode the input text
     if chat_type == 'list':
-        input_ids = tokenizer.apply_chat_template(text, return_tensors="pt").to(device).input_ids
+        input_ids = tokenizer.apply_chat_template(text, return_tensors="pt").to(device)
     else:
         input_ids = tokenizer.encode(text, return_tensors="pt")
     
@@ -207,7 +204,7 @@ def get_explanation(model, tokenizer, text, device, chat_type, max_tokens=512):
     return generated_text
 
 
-def get_explanation_probs(model, tokenizer, context, text, options, device, chat_type):
+def get_explanation_probs(model, tokenizer, context, text, option_letters, device, chat_type):
     new_text = remove_answer_letter(text)
     if chat_type == 'list':
         prompt = context + {'role': 'assistant', 'content': new_text}
@@ -215,7 +212,7 @@ def get_explanation_probs(model, tokenizer, context, text, options, device, chat
         prompt += f"Falcon: {new_text}"
     else:
         prompt = context + '\n' + new_text
-    new_output, probs = get_mc(model, tokenizer, prompt, options, device)
+    new_output, probs = get_mc(model, tokenizer, prompt, option_letters, device)
     return new_output, probs
 
 HF_RESPONSE = {

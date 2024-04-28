@@ -6,6 +6,7 @@ testbench.ipynb
 Untitled.ipynb
 results/*
 elements/*
+configurations/*
 logs/*
 visualization_utils.py
 visualizer.py
@@ -16,3 +17,5 @@ outputs/*
 errors/*
 env/*
 cc_requirements.txt
+
+*/test.*

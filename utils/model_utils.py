@@ -3,6 +3,7 @@ import os
 from typing import Optional
 from collections import defaultdict
 from math import exp
+import traceback
 # External packages
 from openai import OpenAI, AzureOpenAI
 from transformers import AutoTokenizer, AutoModel, AutoModelForCausalLM
@@ -55,7 +56,7 @@ class GPTClient:
     def get_explanation(
         self,
         messages: list[dict[str, str]],
-        model: str = 'gpt-4',
+        model: str = 'gpt-4-1106-preview',
         max_tokens = 500,
         temperature = 0,
         stop = None,
@@ -129,24 +130,42 @@ class GPTClient:
 
 MODEL_PATH = '/home/narunram/scratch/models/'
 
+def get_flash_attention_models(model_name: str):
+    if 'llama' in model_name.lower() or 'falcon' in model_name.lower() or 'mistral' in model_name.lower() or 'mixtral' in model_name.lower() or 'jamba' in model_name.lower() or 'dbrx' in model_name.lower():
+        return True
+    return False
 
 def load_model(base_path: str, from_pretrained_kwargs: dict):
     if not os.path.exists(base_path):
         print(f'Skipping model {base_path}. Cannot be found in {base_path}.')
         return False, False
-    tokenizer = AutoTokenizer.from_pretrained(base_path, local_files_only=True)
+    
+    if 'alpaca' in base_path:
+        tokenizer = AutoTokenizer.from_pretrained(base_path, use_fast = False)
+    else:
+        tokenizer = AutoTokenizer.from_pretrained(base_path, local_files_only=True)
     try:
-        model = AutoModelForCausalLM.from_pretrained(base_path, **from_pretrained_kwargs, local_files_only=True, trust_remote_code=True)
+        if "falcon" in base_path.lower():
+            model = AutoModelForCausalLM.from_pretrained(base_path, **from_pretrained_kwargs)    
+        else:
+            model = AutoModelForCausalLM.from_pretrained(base_path, **from_pretrained_kwargs, trust_remote_code=True)
     except NameError:
         model = AutoModel.from_pretrained(base_path, low_cpu_mem_usage=True, **from_pretrained_kwargs, local_files_only=True, trust_remote_code=True)
     return model, tokenizer
 
 
-def build_kwargs(device: str, num_gpus: int, max_gpu_mem: Optional[str] = None):
+def build_kwargs(device: str, model_name: str, num_gpus: int, max_gpu_mem: Optional[str] = None):
     if device == "cpu":
         kwargs = {"torch_dtype": torch.float32}
     elif device == "cuda":
-        kwargs = {"torch_dtype": torch.float16}
+        if get_flash_attention_models(model_name):
+            kwargs = {"torch_dtype": torch.bfloat16}
+            kwargs['attn_implementation'] = "flash_attention_2"
+        else:
+            kwargs = {"torch_dtype": torch.float16}
+        # if 'alpaca' in model_name:
+            # kwargs['use_fast'] = False
+        kwargs["local_files_only"] = True
         if num_gpus != 1:
             kwargs["device_map"] = "auto"
             if max_gpu_mem is None:
@@ -160,16 +179,18 @@ def build_kwargs(device: str, num_gpus: int, max_gpu_mem: Optional[str] = None):
 
     return kwargs
 
-def load_model_tokenizer(model_path: str, device: str = "cuda", num_gpus: int = 2, max_gpu_mem: Optional[str] = None):
-    kwargs = build_kwargs(device, num_gpus, max_gpu_mem)
+def load_model_tokenizer(model_path: str, model_name: str, device: str = "cuda", num_gpus: int = 2, max_gpu_mem: Optional[str] = None):
     
-    model_path = os.path.join(model_path, 'snapshots/')
+    kwargs = build_kwargs(device, model_name, num_gpus, max_gpu_mem)
+    
+    model_path = os.path.join(model_path, model_name, 'snapshots/')
     model_path = os.path.join(model_path, os.listdir(model_path)[0])
     print('Loading model from:', model_path) 
     try:
         model, tokenizer = load_model(model_path, kwargs)
     except Exception as error:
         print(f'Error loading model: {error}')
+        print(traceback.format_exc())
         return False, False
 
 

@@ -98,6 +98,8 @@ def get_response_hf(model, tokenizer, device, prefix, questions, question_type, 
     outputs = []
     parsed_results = []
 
+    option_letters = get_option_letters(options_lst)
+
     for i, question in enumerate(questions):
         # context is either a list of dictionaries or a string depending on chat_type
         context = reconstruct_context(prefix, questions[:i], outputs, chat_type)
@@ -105,7 +107,7 @@ def get_response_hf(model, tokenizer, device, prefix, questions, question_type, 
         prompt = append_question(context, question, chat_type)
 
         if question_type == 'mc' or question_type == 'mc-separate':
-            answer, probs = HF_RESPONSE[question_type](model, tokenizer, prompt, options_lst[i], device, chat_type)
+            answer, probs = HF_RESPONSE[question_type](model, tokenizer, prompt, option_letters[i], device, chat_type)
             outputs.append(answer)
             parsed_results.append(['', answer, probs])
 
@@ -114,7 +116,7 @@ def get_response_hf(model, tokenizer, device, prefix, questions, question_type, 
             outputs.append(output)
             answer_letter = find_answer_letter(output)
             
-            new_output, probs = get_explanation_probs(model, tokenizer, context, output, options_lst[i], device)
+            new_output, probs = get_explanation_probs(model, tokenizer, context, output, option_letters[i], device)
 
             # TODO: should check if new_output is the same as answer_letter
 
@@ -183,8 +185,9 @@ def eval_models(args, api, device=None):
             job_logger = None
             progress_bar = tqdm
         
-        results_path = os.path.join(args['output_path'], model_name + '.pkl')
-        metadata_path = os.path.join(args['output_path'], model_name + '_metadata.pkl')
+
+        results_path = os.path.join(args['output_path'], model_name.split('--')[-1].title(), args['task_name'] + '_results.pkl')
+        metadata_path = os.path.join(args['output_path'], model_name.split('--')[-1].title(), args['task_name'] + '_metadata.pkl')
 
         results_df = load_results(results_path)
         if check_num_rows(results_df, args):
@@ -197,7 +200,7 @@ def eval_models(args, api, device=None):
             num_gpus = torch.cuda.device_count()
 
             print("Loading model:", model_name)
-            model, tokenizer = load_model_tokenizer(os.path.join(MODEL_PATH, model_name), device, num_gpus, )
+            model, tokenizer = load_model_tokenizer(MODEL_PATH, model_name, device, num_gpus)
             if not model:
                 continue
             else:
@@ -211,9 +214,9 @@ def eval_models(args, api, device=None):
             {
                 'num_shots': [
                     0,
-                    # 1, 
-                    # 2, 
-                    # 5
+                    1, 
+                    2, 
+                    5
                 ], 
                 'allow_explanation': [False], 
                 'question_type': [
@@ -244,7 +247,10 @@ def eval_models(args, api, device=None):
         # Running inference
         for params in param_grid:
             test_metadata = questions_metadata.iloc[questions_df.query("explanation == False").index]
-            sampled_df = test_metadata.groupby(['type', 'domain', 'difficulty_level']).sample(n=params['num_sample'], random_state=42)
+            try:
+                sampled_df = test_metadata.groupby(['type', 'domain', 'difficulty_level']).sample(n=params['num_sample'], random_state=42)
+            except ValueError: 
+                sampled_df = test_metadata
             sampled_qids = set(sampled_df['question_id'])
 
             # Filtered DataFrames based on sampled question_ids
@@ -333,10 +339,13 @@ def eval_models(args, api, device=None):
 
                 if run_num % 10 == 0 and job_logger is not None:
                     job_logger.log_groupby_counts(results_df, ['domain', 'difficulty_level', 'type', 'num_shots', 'allow_explanation'])
-        
+
+                if not os.path.exists(os.path.dirname(results_path)):
+                    os.mkdir(os.path.dirname(results_path))
+                if run_num % 100 == 0:
+                    results_df.to_pickle(results_path)
+                    results_metadata.to_pickle(metadata_path)
         # Save per model
-        if not os.path.exists(args['output_path']):
-            os.mkdir(args['output_path'])
         results_df.to_pickle(results_path)
         results_metadata.to_pickle(metadata_path)
 

@@ -67,7 +67,10 @@ def reconstruct_context(prefix, questions, outputs, chat_type):
         return context
     # For chat models like Llama2, ChatGPT, Anthropic
     elif chat_type == 'list':
-        messages = [{'role': 'user', 'content': prefix}]
+        if prefix:
+            messages = [{'role': 'user', 'content': prefix}]
+        else:
+            messages = []
         for question, output in zip(questions, outputs):
             messages.append({'role': 'user', 'content': question})
             messages.append({'role': 'assistant', 'content': output})
