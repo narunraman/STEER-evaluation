@@ -12,6 +12,7 @@ visualization_utils.py
 visualizer.py
 
 slurm_dispatcher.py
+Slurm.py
 slurm_scripts/*
 outputs/*
 errors/*
