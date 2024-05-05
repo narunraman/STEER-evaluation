@@ -91,6 +91,7 @@ class GPTClient:
         logprobs = None,
         top_logprobs=None,
     ) -> dict:
+        
         response = self.get_completion(
             messages,
             model,
@@ -100,18 +101,21 @@ class GPTClient:
             seed,
             tools,
             logprobs,
-            min(5, top_logprobs) # Azure currently only supports top 5 logprobs
+            top_logprobs 
         )
-        top_responses = response.choices[0].logprobs.content[0].top_logprobs
-        output = defaultdict(lambda: 0)
-        for logprob in top_responses:
-            for valid_token in valid_tokens:
-                if valid_token.startswith(logprob.token.upper()):
-                    output[logprob.token] = exp(logprob.logprob)*100
-            if len(output) == len(valid_tokens):
-                break
-        output = normalize_dict(output)
-        return max(output, key=output.get), output 
+        if logprobs:
+            top_responses = response.choices[0].logprobs.content[0].top_logprobs
+            output = defaultdict(lambda: 0)
+            for logprob in top_responses:
+                for valid_token in valid_tokens:
+                    if valid_token.startswith(logprob.token.upper()):
+                        output[logprob.token] = exp(logprob.logprob)*100
+                if len(output) == len(valid_tokens):
+                    break
+            output = normalize_dict(output)
+            return max(output, key=output.get), output 
+        else:
+            return response.choices[0].message.content
 
 
     

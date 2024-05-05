@@ -11,6 +11,7 @@ logs/*
 visualization_utils.py
 visualizer.py
 
+dispatch.py
 slurm_dispatcher.py
 Slurm.py
 slurm_scripts/*

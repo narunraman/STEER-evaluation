@@ -57,7 +57,7 @@ class JobLogger:
 
         # Log the grouped DataFrame to a CSV file
         output_csv_path = os.path.join(self.file_path, 'grouped_counts.csv')
-        grouped_df.to_csv(output_csv_path, index=False)
+        grouped_df.to_markdown(output_csv_path, index=False)
 
         # Log a message to indicate successful saving of the DataFrame
         self.log_info(f"Counts data saved to {output_csv_path}")
