@@ -126,7 +126,13 @@ def permute_answer(model_answers, permutations):
     # permute reshaped alphabet
     permuted_options = [[options[i] for i in permutation] for permutation, options in zip(permutations, options_list)]
     # get index of model output in permuted reshaped alphabet
-    permuted_indices = [permuted_options[i].index(model_answer) for i, model_answer in enumerate(model_answers)]
+    try:
+        permuted_indices = [permuted_options[i].index(model_answer) for i, model_answer in enumerate(model_answers)]
+    except ValueError:
+        permuted_indices = [0] * len(model_answers)
+        # print(f"Model answer not found in permuted options: {model_answers}")
+        # print(f"Permutations: {permutations}")
+        # sys.exit()
     return permuted_indices
 
 def convert_probabilities(probabilities, q_id, permutations):
@@ -276,7 +282,10 @@ def build_prefix_string(base_id, questions_df, options_df, answers_df, params):
     # flattened list of option letters permuted on each sub_id
     option_letters = flatten_list([[options[i] for i in permutation] for options, permutation in zip(get_option_letters(permutations), permutations)])
     # n-hot encoding of the correct answer indices
-    correct_answer_indices = answers_df[answers_df['question_id'].str.startswith(f"{base_id}_")]['correct_answer'].tolist()
+    try:
+        correct_answer_indices = answers_df[answers_df['question_id'].str.startswith(f"{base_id}_")]['correct_answer'].tolist()
+    except KeyError:
+        correct_answer_indices = answers_df[answers_df['question_id'].str.startswith(f"{base_id}_")]['correct'].tolist()
 
     # Correct option letters
     correct_answers = [element for element, flag in zip(option_letters, correct_answer_indices) if flag == 1]

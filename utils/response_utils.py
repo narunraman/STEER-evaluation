@@ -1,9 +1,11 @@
 # Built-in packages
 from string import ascii_uppercase
 import re
+from collections import defaultdict
 # External packages
 import torch
 import numpy as np
+import openai
 # Local packages
 from utils.parsing_utils import remove_answer_letter
 from utils.utils import get_option_letter, normalize_dict
@@ -227,6 +229,40 @@ HF_RESPONSE = {
 ###                                                                                   ###
 ###                                                                                   ###
 ###                                                                                   ###
+###                           OpenAI Model Response Code                              ###
+###                                                                                   ###
+###                                                                                   ###
+###                                                                                   ###
+#########################################################################################
+#########################################################################################
+
+
+def get_mc_openai(client, valid_tokens, context, model, use_logprobs, num_logprobs):
+    if use_logprobs:
+        try:
+            answer, probs = client.get_answer(valid_tokens = valid_tokens, model=model, messages = context, max_tokens = 1, logprobs = True, top_logprobs=num_logprobs)
+            return answer, probs, use_logprobs
+        except openai.BadRequestError as e:
+            if "This model does not support the 'logprobs' parameter." in str(e):
+                has_logprobs = False
+                answer = client.get_answer(valid_tokens = valid_tokens, model=model, messages = context, max_tokens = 1)
+                return answer, {valid_token: 0.0 for valid_token in valid_tokens}, has_logprobs
+            else:
+                raise e
+    else:
+        answer = client.get_answer(valid_tokens = valid_tokens, model=model, messages = context, max_tokens = 1)
+        return answer, {valid_token: 0.0 for valid_token in valid_tokens}, use_logprobs
+
+
+OPENAI_RESPONSE = {
+    'mc': get_mc_openai,
+}
+
+#########################################################################################
+#########################################################################################
+###                                                                                   ###
+###                                                                                   ###
+###                                                                                   ###
 ###                            Parsing Output Code                                    ###
 ###                                                                                   ###
 ###                                                                                   ###
@@ -346,11 +382,20 @@ def parse_response(model_output, options_lst, question_num, return_val='PARSER_F
 #########################################################################################
 
 def get_true_labels(question_id, answers_df):
-    return answers_df.query('question_id == @question_id')['correct_answer'].tolist()
+    try:
+        return answers_df.query('question_id == @question_id')['correct_answer'].tolist()
+    except KeyError:
+        return answers_df.query('question_id == @question_id')['correct'].tolist()
     
 def get_correct(question_id, answers_df, permuted_answer):
     true_labels = get_true_labels(question_id, answers_df)
-    return true_labels.index(1) == permuted_answer
+    try:
+        return true_labels.index(1) == permuted_answer
+    except ValueError:
+        try:
+            return true_labels.index(True) == permuted_answer
+        except ValueError:
+            return np.nan
 
 def get_random_acc(question_id, answers_df):
     true_labels = get_true_labels(question_id, answers_df)

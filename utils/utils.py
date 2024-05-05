@@ -47,6 +47,7 @@ def get_gpu_memory(max_gpus=None):
 
 
 def load_dfs(filepath):
+    print(filepath)
     return pd.read_pickle(filepath+'questions.pkl'), pd.read_pickle(filepath+'questions_metadata.pkl'), pd.read_pickle(filepath+'options.pkl'), pd.read_pickle(filepath+'answers.pkl')
 
 def flatten_list(matrix):
@@ -69,7 +70,7 @@ def print_chat(messages):
 
 def get_input_paths(task_names, config_dir):
     if type(task_names) == str:
-        if not os.path.exists(config_dir + task_names + '.json'):
+        if not os.path.exists(os.path.join(config_dir, task_names + '.json')):
             print('Creating default config file')
             write_default_config(config_dir, task_names)
         return [(task_names, config_dir + task_names + '.json')]

@@ -12,7 +12,7 @@ import torch
 import openai
 import backoff  # for exponential backoff
 # Local packages
-from utils.response_utils import HF_RESPONSE, get_explanation_probs, parse_response, compute_ece, get_correct, get_true_labels, get_random_acc
+from utils.response_utils import HF_RESPONSE, get_explanation_probs, parse_response, compute_ece, get_correct, get_true_labels, get_random_acc, OPENAI_RESPONSE
 from utils.question_utils import reconstruct_context, build_prefix, get_test_questions, permute_answer, convert_probabilities, append_question
 from utils.parsing_utils import find_answer_letter
 from utils.utils import get_option_letters, print_chat, read_as_defaultdict, load_dfs, get_chat_type, ParameterGrid
@@ -25,6 +25,8 @@ QUESTIONS_DF, QUESTIONS_METADATA, OPTIONS_DF, ANSWERS_DF = None, None, None, Non
 
 OPTIONS = list(ascii_uppercase)
 LETTERS = list(ascii_lowercase)
+
+USE_LOGPROBS = True
 
 ###########################################
 ##                                       ##
@@ -58,20 +60,32 @@ def exponential_backoff_decorator(max_retries, base_delay):
 def get_response(client, model, prefix, questions, question_type, options_lst, chat_type):
     outputs =  []
     parsed_results = []
+    global USE_LOGPROBS
 
     for i, question in enumerate(questions):
         context = reconstruct_context(prefix, questions[:i], outputs, chat_type)
 
         if len(context) > 1:
             context.append({'role': 'user', 'content': question})
-        else:
+        elif len(context) == 1:
             context[0]['content'] += '\n' + question
+        else:
+            context.append({'role': 'user', 'content': question})
 
-        # NOTE: until we get access to tokenizer can't to mc-separte
+        # NOTE: until we get access to tokenizer can't do mc-separate
         if question_type == 'mc':
-            answer, probs = client.get_answer(valid_tokens = get_option_letters(options_lst)[i], model=model, messages = context, max_tokens = 1, logprobs = True, top_logprobs=len(options_lst[i])*2)
-            outputs.append(answer)
+            
+            answer, probs, has_logprobs = OPENAI_RESPONSE[question_type](client=client, 
+                        valid_tokens = get_option_letters(options_lst)[i],
+                        model = model, 
+                        context = context, 
+                        use_logprobs = USE_LOGPROBS, 
+                        num_logprobs = 5)
+            USE_LOGPROBS = has_logprobs
+            
             parsed_results.append(['', answer, probs])
+
+            outputs.append(answer)
         
         # Model is allowed to explain and answer
         elif question_type == 'explanation':
@@ -79,7 +93,6 @@ def get_response(client, model, prefix, questions, question_type, options_lst, c
             explanation, answer = parse_response(output, options_lst, i)
             outputs.append(output)
             parsed_results.append([explanation, answer, defaultdict(lambda: 0)])
-            # TODO: parse output
 
         # Model is allowed to explain only
         elif i % 2 == 0 and (question_type == 'sequential-hidden' or question_type == 'sequential-shown'):
@@ -88,7 +101,13 @@ def get_response(client, model, prefix, questions, question_type, options_lst, c
 
         # Model is allowed to answer only
         elif i % 2 == 1 and (question_type == 'sequential-hidden' or question_type == 'sequential-shown'):
-            answer, probs = client.get_answer(valid_tokens = get_option_letters(options_lst)[i//2], model=model, messages = context, max_tokens = 1, logprobs = True, top_logprobs=len(options_lst[i//2])*2)
+            answer, probs, has_logprobs = OPENAI_RESPONSE['mc'](client=client,
+                        model = model,
+                        valid_tokens = get_option_letters(options_lst)[i//2],
+                        context = context,
+                        use_logprobs = USE_LOGPROBS,
+                        num_logprobs = 5)
+            USE_LOGPROBS = has_logprobs
             outputs.append(answer)
             parsed_results.append([outputs[i-1], answer, probs])
     
@@ -154,7 +173,7 @@ def get_response_hf(model, tokenizer, device, prefix, questions, question_type, 
 
 def create_results_dict(params, task_name, model_name, base_id, sub_id, permuted_answer, model_answer, model_explanation, probabilities, permutations):
     # Setup results_dict
-    results = params
+    results = {key: value for key, value in params.items()}
     results['task_name'] = task_name
     results['model'] = model_name
     results['question_id'] = f'{base_id}_{sub_id}'
@@ -181,19 +200,22 @@ def eval_models(args, api, device=None):
         if api:
             job_logger = JobLogger(f"logs/{args['task_name']}/{model_name}/")
             progress_bar = job_logger.tqdm
+
+            results_path = os.path.join(args['output_path'], model_name, args['task_name'] + '_results.pkl')
+            metadata_path = os.path.join(args['output_path'], model_name, args['task_name'] + '_metadata.pkl')
         else:
             job_logger = None
             progress_bar = tqdm
         
 
-        results_path = os.path.join(args['output_path'], model_name.split('--')[-1].title(), args['task_name'] + '_results.pkl')
-        metadata_path = os.path.join(args['output_path'], model_name.split('--')[-1].title(), args['task_name'] + '_metadata.pkl')
+            results_path = os.path.join(args['output_path'], model_name.split('--')[-1].title(), args['task_name'] + '_results.pkl')
+            metadata_path = os.path.join(args['output_path'], model_name.split('--')[-1].title(), args['task_name'] + '_metadata.pkl')
 
         results_df = load_results(results_path)
         if check_num_rows(results_df, args):
             print(f"Model {model_name} has already been evaluated.")
             continue
-        results_metadata = load_metadata(metadata_path)
+        results_metadata_df = load_metadata(metadata_path)
         
         # Load model and tokenizer
         if device:
@@ -214,39 +236,42 @@ def eval_models(args, api, device=None):
             {
                 'num_shots': [
                     0,
-                    1, 
-                    2, 
-                    5
+                    # 1, 
+                    # 2, 
+                    # 5
                 ], 
                 'allow_explanation': [False], 
                 'question_type': [
                     'mc',
-                    'mc-separate'
+                    #'mc-separate'
                 ], 
                 'num_sample': [args['num_sample']]
             }, 
-            # {
-            #     'num_shots': [
-            #         0, 
-            #         1, 
-            #         2, 
-            #         5
-            #     ], 
-            #     'allow_explanation': [True], 
-            #     'question_type': [
-            #         'explanation',
-            #         'sequential-hidden', 
-            #         'sequential-shown'
-            #     ], 
-            #     'num_sample': [args['num_sample']]
-            # }
+            {
+                'num_shots': [
+                    0, 
+                    # 1, 
+                    # 2, 
+                    # 5
+                ], 
+                'allow_explanation': [True], 
+                'question_type': [
+                    'explanation',
+                    'sequential-hidden', 
+                    'sequential-shown'
+                ], 
+                'num_sample': [args['num_sample']]
+            }
             ])
         
         questions_df, questions_metadata, options_df, answers_df = get_uncompleted_dfs([QUESTIONS_DF, QUESTIONS_METADATA, OPTIONS_DF, ANSWERS_DF], results_df['question_id'].tolist())
         
         # Running inference
         for params in param_grid:
-            test_metadata = questions_metadata.iloc[questions_df.query("explanation == False").index]
+            # Get all questions that are not explanations by question_id
+            question_ids = questions_df.query("explanation == False")['question_id']
+            test_metadata = questions_metadata.query("question_id in @question_ids")
+            # test_metadata = questions_metadata.iloc[questions_df.query("explanation == False").index]
             try:
                 sampled_df = test_metadata.groupby(['type', 'domain', 'difficulty_level']).sample(n=params['num_sample'], random_state=42)
             except ValueError: 
@@ -324,7 +349,7 @@ def eval_models(args, api, device=None):
                     probabilities = probabilities[i],
                     permutations = permutations
                 ) for i, permuted_answer in enumerate(permuted_answers)]
-                
+
                 results_df = pd.concat([results_df, pd.DataFrame.from_records(results)], sort=False, ignore_index=True)
                 
                 result_metadata = [{
@@ -335,19 +360,19 @@ def eval_models(args, api, device=None):
                     'prompt': test_questions,
                     'inference_time': inference_time
                     } for i, permutation in enumerate(permutations)]
-                results_metadata = pd.concat([results_metadata, pd.DataFrame.from_records(result_metadata)], sort=False, ignore_index=True)
+                results_metadata_df = pd.concat([results_metadata_df if not results_metadata_df.empty else None, pd.DataFrame.from_records(result_metadata)], sort=False, ignore_index=True)
 
                 if run_num % 10 == 0 and job_logger is not None:
-                    job_logger.log_groupby_counts(results_df, ['domain', 'difficulty_level', 'type', 'num_shots', 'allow_explanation'])
+                    job_logger.log_groupby_counts(results_df if not results_df.empty else None, ['domain', 'difficulty_level', 'type', 'num_shots', 'allow_explanation'])
 
                 if not os.path.exists(os.path.dirname(results_path)):
                     os.mkdir(os.path.dirname(results_path))
                 if run_num % 100 == 0:
                     results_df.to_pickle(results_path)
-                    results_metadata.to_pickle(metadata_path)
+                    results_metadata_df.to_pickle(metadata_path)
         # Save per model
         results_df.to_pickle(results_path)
-        results_metadata.to_pickle(metadata_path)
+        results_metadata_df.to_pickle(metadata_path)
 
 
 def run_evaluation(input_path: str, api: bool):
