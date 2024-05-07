@@ -305,8 +305,13 @@ def build_prefix_string(base_id, questions_df, options_df, answers_df, params):
 def build_prefix(task_data, questions_df, options_df, questions_metadata, answers_df, params):
 
     # get num_shots number of prefix questions by question_id
-    prefix_question_ids = questions_df.query('explanation != False').merge(questions_metadata, on='question_id', how='left').query("type == @task_data['type'] and domain == @task_data['domain'] and difficulty_level == @task_data['difficulty_level']").sample(n=params['num_shots'])['question_id'].tolist()
-    
+    prefix_questions = questions_df.query('explanation != False').merge(questions_metadata, on='question_id', how='left').query("type == @task_data['type'] and domain == @task_data['domain'] and difficulty_level == @task_data['difficulty_level']")
+    try:
+        prefix_question_ids = prefix_questions.sample(n=params['num_shots'])['question_id'].tolist()
+    except ValueError as e:
+        if 'Cannot take a larger sample than population' in str(e):
+            print(f"Tried sampling {params['num_shots']} from dataframe with metadata {task_data}. Only {len(prefix_questions)} available.")
+        raise e
     # Get base ids
     base_ids = set(question_id.split('_')[0] for question_id in prefix_question_ids)
 

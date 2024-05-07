@@ -331,6 +331,30 @@ def check_answer(answer, options_lst, question_num):
     return 'ANSWER_NOT_IN_OPTION_TEXT'
 
 
+def sanitize_text(text):
+    """
+    Sanitizes text to be used in a regex matching group.
+
+    This function escapes special characters in the text that have special meaning in regular expressions,
+    ensuring that the text can be safely used as a matching group.
+
+    Parameters:
+    text (str): The text to be sanitized.
+
+    Returns:
+    str: The sanitized text.
+    """
+    if type(text) != str:
+        text = str(text)
+    special_chars = ['\\', '.', '^', '$', '*', '+', '?', '{', '}', '[', ']', '(', ')', '|']
+    sanitized_text = ''
+    for char in text:
+        if char in special_chars:
+            sanitized_text += '\\' + char
+        else:
+            sanitized_text += char
+    return sanitized_text
+
 def parse_response(model_output, options_lst, question_num, return_val='PARSER_FOUND_NOTHING'):
     """
     Parses a model's output to find a valid answer within the specified options.
@@ -351,12 +375,10 @@ def parse_response(model_output, options_lst, question_num, return_val='PARSER_F
         return model_output, return_val
     
     # Building patterns for both option letters and full option texts
-    try:
-        options_pattern = '|'.join(options_lst[question_num])
-    except TypeError:
-        options_pattern = '|'.join([str(option) for option in options_lst[question_num]])
     letters_pattern = '|'.join(get_valid_letters(options_lst))
+    options_pattern = '|'.join([sanitize_text(option) for option in options_lst[question_num]])
     
+    # Compiling the regular expression pattern to find the answer in the model output
     pattern = re.compile(
         rf'(?:Correct Answer|correct answer|Answer|the correct option is|The correct option is|the correct answer is|The correct answer is):?\s*({letters_pattern}|{options_pattern})(?:[\"\'\s\.]|$)',
         re.IGNORECASE

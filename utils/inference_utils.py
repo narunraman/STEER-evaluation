@@ -92,7 +92,8 @@ def get_response(client, model, prefix, questions, question_type, options_lst, c
             output = client.get_explanation(model = model, messages = context, max_tokens = None)
             explanation, answer = parse_response(output, options_lst, i)
             outputs.append(output)
-            parsed_results.append([explanation, answer, defaultdict(lambda: 0)])
+            valid_tokens = get_option_letters(options_lst)[i]
+            parsed_results.append([explanation, answer, {valid_token: 0.0 for valid_token in valid_tokens}])
 
         # Model is allowed to explain only
         elif i % 2 == 0 and (question_type == 'sequential-hidden' or question_type == 'sequential-shown'):
@@ -192,68 +193,32 @@ def create_results_dict(params, task_name, model_name, base_id, sub_id, permuted
     return results
 
 
-def eval_models(args, api, device=None):
-
-    model_names = list(args['models'].keys())
-    # save results per model
-    for model_name in model_names:
+# setup parameter grid
+def setup_param_grid(args, api=False):
+    params = []
+    if args['allow_explanation'] % 2 == 0:
         if api:
-            job_logger = JobLogger(f"logs/{args['task_name']}/{model_name}/")
-            progress_bar = job_logger.tqdm
-
-            results_path = os.path.join(args['output_path'], model_name, args['task_name'] + '_results.pkl')
-            metadata_path = os.path.join(args['output_path'], model_name, args['task_name'] + '_metadata.pkl')
-        else:
-            job_logger = None
-            progress_bar = tqdm
-        
-
-            results_path = os.path.join(args['output_path'], model_name.split('--')[-1].title(), args['task_name'] + '_results.pkl')
-            metadata_path = os.path.join(args['output_path'], model_name.split('--')[-1].title(), args['task_name'] + '_metadata.pkl')
-
-        results_df = load_results(results_path)
-        if check_num_rows(results_df, args):
-            print(f"Model {model_name} has already been evaluated.")
-            continue
-        results_metadata_df = load_metadata(metadata_path)
-        
-        # Load model and tokenizer
-        if device:
-            num_gpus = torch.cuda.device_count()
-
-            print("Loading model:", model_name)
-            model, tokenizer = load_model_tokenizer(MODEL_PATH, model_name, device, num_gpus)
-            if not model:
-                continue
-            else:
-                print(f'Model {model_name} loaded')
-        else:
-            client = GPTClient()
-        
-
-        # Setup parameter grid
-        param_grid = ParameterGrid([
-            {
-                'num_shots': [
-                    0,
-                    # 1, 
-                    # 2, 
-                    # 5
-                ], 
+            params.append({
+                'num_shots': args['num_shots'], 
                 'allow_explanation': [False], 
                 'question_type': [
-                    'mc',
-                    #'mc-separate'
-                ], 
+                    'mc'
+                ],
                 'num_sample': [args['num_sample']]
-            }, 
-            {
-                'num_shots': [
-                    0, 
-                    # 1, 
-                    # 2, 
-                    # 5
-                ], 
+            })
+        else:
+            params.append({
+                    'num_shots': args['num_shots'], 
+                    'allow_explanation': [False], 
+                    'question_type': [
+                        'mc',
+                        'mc-separate'
+                    ],
+                    'num_sample': [args['num_sample']]
+                }) 
+    if args['allow_explanation'] > 0:
+        params.append({
+                'num_shots': args['num_explanations'], 
                 'allow_explanation': [True], 
                 'question_type': [
                     'explanation',
@@ -261,13 +226,59 @@ def eval_models(args, api, device=None):
                     'sequential-shown'
                 ], 
                 'num_sample': [args['num_sample']]
-            }
-            ])
+            })
+    return ParameterGrid(
+        params
+    )
+
+def eval_models(args, api, device=None):
+
+    model_names = list(args['models'].keys())
+    # save results per model
+    for model_name in model_names:
+        if api:
+            job_logger = JobLogger(f"logs/{args['task_name']}/{model_name}/", api)
+            progress_bar = job_logger.tqdm
+
+            results_path = os.path.join(args['output_path'], model_name, args['task_name'] + '_results.pkl')
+            metadata_path = os.path.join(args['output_path'], model_name, args['task_name'] + '_metadata.pkl')
+        else:
+            job_logger = JobLogger("", api)
+            progress_bar = tqdm
+
+            results_path = os.path.join(args['output_path'], model_name.split('--')[-1].title(), args['task_name'] + '_results.pkl')
+            metadata_path = os.path.join(args['output_path'], model_name.split('--')[-1].title(), args['task_name'] + '_metadata.pkl')
+
+        results_df = load_results(results_path)
+        if check_num_rows(results_df, args):
+            job_logger.log_output(f"Model {model_name} has already been evaluated.")
+            continue
+        results_metadata_df = load_metadata(metadata_path)
         
-        questions_df, questions_metadata, options_df, answers_df = get_uncompleted_dfs([QUESTIONS_DF, QUESTIONS_METADATA, OPTIONS_DF, ANSWERS_DF], results_df['question_id'].tolist())
+        # Load model and tokenizer
+        if device:
+            num_gpus = torch.cuda.device_count()
+
+            job_logger.log_output("Loading model:", model_name)
+            model, tokenizer = load_model_tokenizer(MODEL_PATH, model_name, device, num_gpus)
+            if not model:
+                continue
+            else:
+                job_logger.log_output(f'Model {model_name} loaded')
+        else:
+            client = GPTClient()
         
+        
+        # Setup parameter grid
+        param_grid = setup_param_grid(args, api)
+        
+        
+
         # Running inference
         for params in param_grid:
+            # Get all questions that have not been answered under the current parameters (num_shots, allow_explanation, etc.)
+            curr_results = results_df.query("num_shots == @params['num_shots'] and allow_explanation == @params['allow_explanation']")
+            questions_df, questions_metadata, options_df, answers_df = get_uncompleted_dfs([QUESTIONS_DF, QUESTIONS_METADATA, OPTIONS_DF, ANSWERS_DF], curr_results['question_id'].tolist())
             # Get all questions that are not explanations by question_id
             question_ids = questions_df.query("explanation == False")['question_id']
             test_metadata = questions_metadata.query("question_id in @question_ids")
@@ -288,7 +299,11 @@ def eval_models(args, api, device=None):
             for run_num, base_id in enumerate(progress_bar(base_ids, desc=str(params), dynamic_ncols=True)):
                 # build prefix for few-shot prompting
                 task_data = questions_metadata.query(f"question_id == '{base_id}_0'").to_dict('records')[0]
-                prefix = build_prefix(task_data, questions_df, options_df, questions_metadata, answers_df, params)
+                try:
+                    prefix = build_prefix(task_data, questions_df, options_df, questions_metadata, answers_df, params)
+                except ValueError as e:
+                    job_logger.log_output(f"Error: {e}. Skipping {args['num_shots']} num_shots for {task_data}.")
+                    continue
 
                 # build question string
                 test_questions, test_options, permutations = get_test_questions(base_id, filtered_questions_df, filtered_options_df, params)
@@ -320,7 +335,7 @@ def eval_models(args, api, device=None):
                             chat_type=get_chat_type(model_name)
                         )
                     except openai.BadRequestError as e:
-                        print(f"Error: {e}")
+                        job_logger.log_output(f"Error: {e}")
                         continue
 
 
@@ -368,6 +383,7 @@ def eval_models(args, api, device=None):
                 if not os.path.exists(os.path.dirname(results_path)):
                     os.mkdir(os.path.dirname(results_path))
                 if run_num % 100 == 0:
+                    job_logger.log_output(results_df.to_string())
                     results_df.to_pickle(results_path)
                     results_metadata_df.to_pickle(metadata_path)
         # Save per model
