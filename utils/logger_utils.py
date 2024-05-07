@@ -2,11 +2,13 @@ import logging
 from tqdm import tqdm
 import os
 class JobLogger:
-    def __init__(self, file_path):
-        self.file_path = file_path
-        self.error_logger = logging.getLogger('error_logger')
-        self.output_logger = logging.getLogger('output_logger')
-        self.configure_loggers()
+    def __init__(self, file_path, api):
+        self.api = api
+        if api:
+            self.file_path = file_path
+            self.error_logger = logging.getLogger('error_logger')
+            self.output_logger = logging.getLogger('output_logger')
+            self.configure_loggers()
 
     
     def configure_loggers(self):
@@ -31,10 +33,12 @@ class JobLogger:
     
     def log_error(self, message):
         self.error_logger.error(message)
-
     
-    def log_info(self, message):
-        self.output_logger.info(message)
+    def log_output(self, message):
+        if self.api:
+            self.output_logger.info(message)
+        else:
+            print(message)
 
     
     def tqdm(self, *args, **kwargs):
@@ -60,6 +64,6 @@ class JobLogger:
         grouped_df.to_markdown(output_csv_path, index=False)
 
         # Log a message to indicate successful saving of the DataFrame
-        self.log_info(f"Counts data saved to {output_csv_path}")
+        self.log_output(f"Counts data saved to {output_csv_path}")
 
         return grouped_df
