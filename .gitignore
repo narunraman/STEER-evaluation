@@ -21,3 +21,5 @@ env/*
 cc_requirements.txt
 
 */test.*
+
+grouped_counts.csv

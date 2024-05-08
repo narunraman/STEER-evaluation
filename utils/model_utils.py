@@ -139,6 +139,16 @@ def get_flash_attention_models(model_name: str):
         return True
     return False
 
+def supports_flash_attention(device_id):
+    """Check if a GPU supports FlashAttention."""
+    major, minor = torch.cuda.get_device_capability(device_id)
+    
+    # Check if the GPU architecture is Ampere (SM 8.x) or newer (SM 9.0)
+    is_sm8x = major == 8 and minor >= 0
+    is_sm90 = major == 9 and minor == 0
+
+    return is_sm8x or is_sm90
+
 def load_model(base_path: str, from_pretrained_kwargs: dict):
     if not os.path.exists(base_path):
         print(f'Skipping model {base_path}. Cannot be found in {base_path}.')
@@ -162,7 +172,8 @@ def build_kwargs(device: str, model_name: str, num_gpus: int, max_gpu_mem: Optio
     if device == "cpu":
         kwargs = {"torch_dtype": torch.float32}
     elif device == "cuda":
-        if get_flash_attention_models(model_name):
+        gpu_supports_flash_attn = all([supports_flash_attention(i) for i in range(num_gpus)])
+        if get_flash_attention_models(model_name) and gpu_supports_flash_attn:
             kwargs = {"torch_dtype": torch.bfloat16}
             kwargs['attn_implementation'] = "flash_attention_2"
         else:

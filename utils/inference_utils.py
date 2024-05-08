@@ -261,12 +261,18 @@ def eval_models(args, api, device=None):
         if device:
             num_gpus = torch.cuda.device_count()
 
-            job_logger.log_output("Loading model:", model_name)
+            job_logger.log_output(f"Loading model: {model_name}")
             model, tokenizer = load_model_tokenizer(MODEL_PATH, model_name, device, num_gpus)
             if not model:
                 continue
             else:
                 job_logger.log_output(f'Model {model_name} loaded')
+            
+            try:
+                for param in model.parameters():
+                    job_logger.log_output(param.device)
+            except:
+                pass
         else:
             client = GPTClient()
         
@@ -383,7 +389,7 @@ def eval_models(args, api, device=None):
                     job_logger.log_groupby_counts(results_df if not results_df.empty else None, ['domain', 'difficulty_level', 'type', 'num_shots', 'allow_explanation'])
 
                 if not os.path.exists(os.path.dirname(results_path)):
-                    os.mkdir(os.path.dirname(results_path))
+                    os.makedirs(os.path.dirname(results_path))
                 if run_num % 100 == 0:
                     job_logger.log_output(results_df.to_string())
                     results_df.to_pickle(results_path)
