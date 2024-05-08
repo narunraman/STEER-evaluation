@@ -75,10 +75,13 @@ def reconstruct_context(prefix, questions, outputs, chat_type):
             messages.append({'role': 'user', 'content': question})
             messages.append({'role': 'assistant', 'content': output})
         
-        # Combine the prefix into the first user message
-        if len(messages) > 1:
-            messages[1] = {'role': 'user', 'content': messages[0]['content'] + '\n' + messages[1]['content']}
-            messages = messages[1:]
+        # Combine any consecutive user messages
+        for i in range(1, len(messages)):
+            if messages[i]['role'] == 'user' and messages[i-1]['role'] == 'user':
+                messages[i]['content'] = messages[i-1]['content'] + '\n' + messages[i]['content']
+                messages[i-1] = None
+        messages = [message for message in messages if message is not None]
+
         return messages
     
     # For non-chat models
