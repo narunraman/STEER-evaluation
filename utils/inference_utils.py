@@ -136,7 +136,7 @@ def get_response_hf(model, tokenizer, device, prefix, questions, question_type, 
             outputs.append(output)
             answer_letter = find_answer_letter(output)
             
-            new_output, probs = get_explanation_probs(model, tokenizer, context, output, option_letters[i], device)
+            new_output, probs = get_explanation_probs(model, tokenizer, context, output, option_letters[i], device, chat_type)
 
             # TODO: should check if new_output is the same as answer_letter
 
@@ -245,7 +245,7 @@ def eval_models(args, api, device=None):
             results_path = os.path.join(args['output_path'], model_name, args['task_name'] + '_results.pkl')
             metadata_path = os.path.join(args['output_path'], model_name, args['task_name'] + '_metadata.pkl')
         else:
-            job_logger = JobLogger("", api)
+            job_logger = JobLogger(f"/home/narunram/scratch/llm_outputs/{model_name.split('--')[-1].title()}/", api)
             progress_bar = tqdm
 
             results_path = os.path.join(args['output_path'], model_name.split('--')[-1].title(), args['task_name'] + '_results.pkl')
@@ -386,7 +386,10 @@ def eval_models(args, api, device=None):
                 results_metadata_df = pd.concat([results_metadata_df if not results_metadata_df.empty else None, pd.DataFrame.from_records(result_metadata)], sort=False, ignore_index=True)
 
                 if run_num % 10 == 0 and job_logger is not None:
-                    job_logger.log_groupby_counts(results_df if not results_df.empty else None, ['domain', 'difficulty_level', 'type', 'num_shots', 'allow_explanation'])
+                    try:
+                        job_logger.log_groupby_counts(results_df if not results_df.empty else None, ['domain', 'difficulty_level', 'type', 'num_shots', 'allow_explanation'])
+                    except:
+                        pass
 
                 if not os.path.exists(os.path.dirname(results_path)):
                     os.makedirs(os.path.dirname(results_path))

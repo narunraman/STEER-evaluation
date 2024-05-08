@@ -89,9 +89,16 @@ def reconstruct_context(prefix, questions, outputs, chat_type):
 
 def append_question(context, question, chat_type):
     if chat_type == 'list':
-        context.append({'role': 'user', 'content': question})
+        if context[-1]['role'] == 'user':
+            context[-1]['content'] += '\n' + question
+        else:
+            context.append({'role': 'user', 'content': question})
     elif chat_type == 'textual':
-        context += f"User: {question}\n"
+        user_roles = context.split('User: ')
+        if 'Falcon: ' in user_roles[-1]:
+            context += f"User: {question}\n"
+        else:
+            context += '\n' + question
     else:
         context += '\n' + question
     return context
@@ -231,12 +238,12 @@ def merge_dfs(questions_df, options_df, questions_metadata=None, answers_df=None
         return options_df.merge(questions_df, on='question_id', how='left').merge(questions_metadata, on='question_id', how='left')
     return pd.merge(options_df, questions_df, on='question_id', how='left')
 
-def get_test_questions(q_id, questions_df, options_df, params):
+def get_test_questions(base_id, questions_df, options_df, params):
     """
     Generate formatted test questions and their options based on specified parameters, including permutations of options.
 
     Args:
-        q_id (str): Base question ID used to filter related questions.
+        base_id (str): Base question ID used to filter related questions.
         questions_df (pd.DataFrame): DataFrame containing question details.
         options_df (pd.DataFrame): DataFrame containing option details for questions.
         params (dict): Dictionary containing parameters for question formatting.
@@ -252,7 +259,7 @@ def get_test_questions(q_id, questions_df, options_df, params):
     Each question's options are permuted randomly, and the permutation is returned along with the formatted questions.
     """
     
-    related_questions = questions_df[questions_df['question_id'].str.startswith(f"{q_id}_")]
+    related_questions = questions_df[questions_df['question_id'].str.startswith(f"{base_id}_")]
     test_questions, test_options = [] ,[]
     options_permutations = []  # To track permutations of options for each question
     global_option_index = 0
