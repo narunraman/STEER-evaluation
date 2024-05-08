@@ -20,4 +20,6 @@ errors/*
 env/*
 cc_requirements.txt
 
+grouped_counts.csv
+
 */test.*
