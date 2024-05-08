@@ -4,8 +4,8 @@ import os
 class JobLogger:
     def __init__(self, file_path, api):
         self.api = api
+        self.file_path = file_path
         if api:
-            self.file_path = file_path
             self.error_logger = logging.getLogger('error_logger')
             self.output_logger = logging.getLogger('output_logger')
             self.configure_loggers()
@@ -58,6 +58,8 @@ class JobLogger:
     def log_groupby_counts(self, df, groupby_cols):
         # Group the DataFrame and calculate counts
         grouped_df = df.groupby(groupby_cols).size().reset_index(name='counts')
+        
+        grouped_df = grouped_df.sort_values(by='num_shots')
 
         # Log the grouped DataFrame to a CSV file
         output_csv_path = os.path.join(self.file_path, 'grouped_counts.csv')
