@@ -196,10 +196,12 @@ def create_results_dict(params, task_name, model_name, base_id, sub_id, permuted
 # setup parameter grid
 def setup_param_grid(args, api=False):
     params = []
+    if 'allow_explanation' not in args:
+        args['allow_explanation'] = 2
     if args['allow_explanation'] % 2 == 0:
         if api:
             params.append({
-                'num_shots': args['num_shots'], 
+                'num_shots': args.get('num_shots', [0, 1, 2, 5]), 
                 'allow_explanation': [False], 
                 'question_type': [
                     'mc'
@@ -208,7 +210,7 @@ def setup_param_grid(args, api=False):
             })
         else:
             params.append({
-                    'num_shots': args['num_shots'], 
+                    'num_shots': args.get('num_shots', [0, 1, 2, 5]), 
                     'allow_explanation': [False], 
                     'question_type': [
                         'mc',
@@ -218,7 +220,7 @@ def setup_param_grid(args, api=False):
                 }) 
     if args['allow_explanation'] > 0:
         params.append({
-                'num_shots': args['num_explanations'], 
+                'num_shots': args.get('num_explanations', [0, 1, 2, 5]), 
                 'allow_explanation': [True], 
                 'question_type': [
                     'explanation',
