@@ -89,7 +89,7 @@ def reconstruct_context(prefix, questions, outputs, chat_type):
 
 def append_question(context, question, chat_type):
     if chat_type == 'list':
-        if context[-1]['role'] == 'user':
+        if context and context[-1]['role'] == 'user':
             context[-1]['content'] += '\n' + question
         else:
             context.append({'role': 'user', 'content': question})
