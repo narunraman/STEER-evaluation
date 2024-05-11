@@ -2,33 +2,33 @@ import logging
 from tqdm import tqdm
 import os
 class JobLogger:
-    def __init__(self, file_path, api):
+    def __init__(self, file_path, api=False):
         self.api = api
         self.file_path = file_path
-        if api:
-            self.error_logger = logging.getLogger('error_logger')
-            self.output_logger = logging.getLogger('output_logger')
-            self.configure_loggers()
+        self.error_logger = logging.getLogger('error_logger')
+        self.output_logger = logging.getLogger('output_logger')
+        self.configure_loggers(api)
 
     
-    def configure_loggers(self):
+    def configure_loggers(self, api):
         logging.basicConfig(level=logging.INFO)
         
         # Create directory if it doesn't exist
         if not os.path.exists(os.path.dirname(self.file_path)):
             os.makedirs(os.path.dirname(self.file_path))
         
-        # Create file handlers for both types of logs
-        error_file_handler = logging.FileHandler(f'{self.file_path}/errors.err', mode='w+')
-        output_file_handler = logging.FileHandler(f'{self.file_path}/outputs.out', mode='w+')
+        if api:
+            # Create file handlers for both types of logs
+            error_file_handler = logging.FileHandler(f'{self.file_path}/errors.err', mode='w+')
+            output_file_handler = logging.FileHandler(f'{self.file_path}/outputs.out', mode='w+')
 
-        # Optionally, set the logging level for each handler
-        error_file_handler.setLevel(logging.ERROR)
-        output_file_handler.setLevel(logging.INFO)
+            # Optionally, set the logging level for each handler
+            error_file_handler.setLevel(logging.ERROR)
+            output_file_handler.setLevel(logging.INFO)
 
-        # Add the handlers to the loggers
-        self.error_logger.addHandler(error_file_handler)
-        self.output_logger.addHandler(output_file_handler)
+            # Add the handlers to the loggers
+            self.error_logger.addHandler(error_file_handler)
+            self.output_logger.addHandler(output_file_handler)
 
     
     def log_error(self, message):

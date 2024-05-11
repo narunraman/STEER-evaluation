@@ -153,7 +153,7 @@ def get_mc_option(model, tokenizer, text, options, device, chat_type):
             input_ids = tokenizer.encode(text, return_tensors="pt").to(device)
 
         # Get the model's output
-        outputs = model(input_ids)
+        outputs = model(input_ids.cuda())
 
         # Get logits of the next token
         logits = outputs.logits[:, -1, :]
@@ -189,7 +189,7 @@ def get_explanation(model, tokenizer, text, device, chat_type, max_tokens=512):
     if chat_type == 'list':
         input_ids = tokenizer.apply_chat_template(text, return_tensors="pt").to(device)
     else:
-        input_ids = tokenizer.encode(text, return_tensors="pt")
+        input_ids = tokenizer.encode(text, return_tensors="pt").to(device)
     
     # Ensure the model is in evaluation mode
     model.eval()

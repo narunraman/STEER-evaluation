@@ -394,7 +394,6 @@ def eval_models(args, api, device=None):
                 if not os.path.exists(os.path.dirname(results_path)):
                     os.makedirs(os.path.dirname(results_path))
                 if run_num % 100 == 0:
-                    job_logger.log_output(results_df.to_string())
                     results_df.to_pickle(results_path)
                     results_metadata_df.to_pickle(metadata_path)
         # Save per model
