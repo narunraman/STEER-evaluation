@@ -214,7 +214,7 @@ def get_explanation_probs(model, tokenizer, context, text, option_letters, devic
         prompt += f"Falcon: {new_text}"
     else:
         prompt = context + '\n' + new_text
-    new_output, probs = get_mc(model, tokenizer, prompt, option_letters, device)
+    new_output, probs = get_mc(model, tokenizer, prompt, option_letters, device, chat_type)
     return new_output, probs
 
 HF_RESPONSE = {
