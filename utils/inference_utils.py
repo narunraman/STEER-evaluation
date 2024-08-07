@@ -1,25 +1,25 @@
 #Built-in packages
 import time
 import random
-from collections import defaultdict
 import os
 from tqdm import tqdm
 from string import ascii_lowercase, ascii_uppercase
 # External packages
 import numpy as np
 import pandas as pd
-import torch
 import openai
+import torch
 import backoff  # for exponential backoff
 # Local packages
-from utils.response_utils import HF_RESPONSE, get_explanation_probs, parse_response, compute_ece, get_correct, get_true_labels, get_random_acc, OPENAI_RESPONSE
+from utils.response_utils import parse_response, compute_ece, get_correct, get_true_labels, get_random_acc
+from utils.api_response_utils import OPENAI_RESPONSE
+from utils.hf_response_utils import get_explanation_probs, HF_RESPONSE
 from utils.question_utils import reconstruct_context, build_prefix, get_test_questions, permute_answer, convert_probabilities, append_question
 from utils.parsing_utils import find_answer_letter
 from utils.utils import get_option_letters, print_chat, read_as_defaultdict, load_dfs, get_chat_type, ParameterGrid
 from utils.model_utils import GPTClient, MODEL_PATH, load_model_tokenizer
 from utils.logger_utils import JobLogger
 from utils.dataset_utils import load_results, load_metadata, check_num_rows, get_uncompleted_dfs
-import torch
 
 QUESTIONS_DF, QUESTIONS_METADATA, OPTIONS_DF, ANSWERS_DF = None, None, None, None
 
@@ -111,6 +111,9 @@ def get_response(client, model, prefix, questions, question_type, options_lst, c
             USE_LOGPROBS = has_logprobs
             outputs.append(answer)
             parsed_results.append([outputs[i-1], answer, probs])
+
+        else:
+            raise ValueError(f"Invalid question_type: {question_type}")
     
     return np.array(parsed_results).T.tolist()
 
@@ -196,6 +199,7 @@ def create_results_dict(params, task_name, model_name, base_id, sub_id, permuted
 # setup parameter grid
 def setup_param_grid(args, api=False):
     params = []
+    # if there is no allow_explanation, default to both adaptation regimes
     if 'allow_explanation' not in args:
         args['allow_explanation'] = 2
     if args['allow_explanation'] % 2 == 0:
@@ -206,6 +210,7 @@ def setup_param_grid(args, api=False):
                 'question_type': [
                     'mc'
                 ],
+                'robust-calibration': [False, True],
                 'num_sample': [args['num_sample']]
             })
         else:
@@ -227,19 +232,84 @@ def setup_param_grid(args, api=False):
                     'sequential-hidden', 
                     'sequential-shown'
                 ], 
+                'robust-calibration': [False, True],
                 'num_sample': [args['num_sample']]
             })
     return ParameterGrid(
         params
     )
 
-def eval_models(args, api, device=None):
+# TODO: do this
+# def eval_async(args, api, model_name, client = 'gpt'):
+#     job_logger = JobLogger(f"/var/steer/logs/{args['task_name']}/{model_name}/", api)
+#     progress_bar = job_logger.tqdm
 
-    model_names = list(args['models'].keys())
+#     results_path = os.path.join(args['output_path'], model_name, args['task_name'] + '_results.pkl')
+#     metadata_path = os.path.join(args['output_path'], model_name, args['task_name'] + '_metadata.pkl')
+
+#     results_df = load_results(results_path)
+#     if check_num_rows(results_df, args):
+#         job_logger.log_output(f"Model {model_name} has already been evaluated.")
+#         continue
+#     results_metadata_df = load_metadata(metadata_path)
+
+#     # TODO: handle logic for different clients
+#     client = GPTClient()
+
+#     param_grid = setup_param_grid(args, api=True)
+
+#     try:
+#         sampled_df = test_metadata.groupby(['type', 'domain', 'difficulty_level']).sample(n=params['num_sample'], random_state=42)
+#     except ValueError: 
+#         sampled_df = test_metadata
+#     sampled_qids = set(sampled_df['question_id'])
+
+
+
+
+
+
+def construct_robust_calibrated_distribution(questions_metadata, options_df):
+    '''
+    Create a boolean list of whether a question should be calibrated or not.
+    For each group of (domain, type, difficulty_level) we want to calibrate 1/num_options questions.
+    '''
+
+    robust_calibration_mask = [False] * len(questions_metadata)
+    
+    # Group by (domain, type, difficulty_level)
+    grouped = questions_metadata.groupby(['domain', 'type', 'difficulty_level'])
+    
+    for _, group in grouped:
+        num_options = len(options_df.query("question_id == @group.iloc[0]['question_id']"))
+        if num_options == 0:
+            raise ValueError(f"Question {group.iloc[0]['question_id']} has no options.")
+        if num_options == 1:
+            continue
+        
+        # Calculate the number of questions to calibrate
+        num_to_calibrate = max(1, len(group) // num_options)
+        
+        # Randomly select questions to calibrate
+        indices_to_calibrate = random.sample(group.index.tolist(), num_to_calibrate)
+        
+        for idx in indices_to_calibrate:
+            robust_calibration_mask[idx] = True
+    
+    return robust_calibration_mask
+
+
+def eval_models(args, api, device=None, model_name = None):
+
+
+    if model_name:
+        model_names = [model_name]
+    else:
+        model_names = list(args['models'].keys())
     # save results per model
     for model_name in model_names:
         if api:
-            job_logger = JobLogger(f"logs/{args['task_name']}/{model_name}/", api)
+            job_logger = JobLogger(f"/var/steer/logs/{args['task_name']}/{model_name}/", api)
             progress_bar = job_logger.tqdm
 
             results_path = os.path.join(args['output_path'], model_name, args['task_name'] + '_results.pkl')
@@ -302,6 +372,8 @@ def eval_models(args, api, device=None):
             filtered_options_df = options_df.query("question_id in @sampled_qids")
 
             base_ids = set(question_id.split('_')[0] for question_id in sampled_qids)
+            filtered_questions_metadata = questions_metadata.query("question_id in @sampled_qids")
+            robust_calibration_mask = construct_robust_calibrated_distribution(filtered_questions_metadata, filtered_options_df)
 
             # iterate over questions by id
             for run_num, base_id in enumerate(progress_bar(base_ids, desc=str(params), dynamic_ncols=True)):
@@ -314,7 +386,10 @@ def eval_models(args, api, device=None):
                     continue
 
                 # build question string
-                test_questions, test_options, permutations = get_test_questions(base_id, filtered_questions_df, filtered_options_df, params)
+                if params['robust-calibration']:
+                    test_questions, test_options, permutations = get_test_questions(base_id, filtered_questions_df, filtered_options_df, params, answers_df, replace_answer = robust_calibration_mask[run_num])
+                else:
+                    test_questions, test_options, permutations = get_test_questions(base_id, filtered_questions_df, filtered_options_df, params)
 
                 # Track total time to run inference on a model
                 start_time = time.time()
@@ -343,7 +418,7 @@ def eval_models(args, api, device=None):
                             chat_type=get_chat_type(model_name)
                         )
                     except openai.BadRequestError as e:
-                        job_logger.log_output(f"Error: {e}")
+                        job_logger.log_error(f"Error: {e}")
                         continue
 
 
@@ -379,8 +454,10 @@ def eval_models(args, api, device=None):
                     'task_name': args['task_name'],
                     'model_name': model_name,
                     'question_id': f"{base_id}_{i}",
+                    "num_shots": result_params['num_shots'],
+                    "question_type": result_params['question_type'],
                     'permutation': permutation,
-                    'prompt': test_questions,
+                    'prompt': test_questions[i],
                     'inference_time': inference_time
                     } for i, permutation in enumerate(permutations)]
                 results_metadata_df = pd.concat([results_metadata_df if not results_metadata_df.empty else None, pd.DataFrame.from_records(result_metadata)], sort=False, ignore_index=True)
@@ -388,8 +465,8 @@ def eval_models(args, api, device=None):
                 if run_num % 10 == 0 and job_logger is not None:
                     try:
                         job_logger.log_groupby_counts(results_df if not results_df.empty else None, ['domain', 'difficulty_level', 'type', 'num_shots', 'allow_explanation'])
-                    except:
-                        pass
+                    except Exception as e:
+                        job_logger.log_output(str(e))
 
                 if not os.path.exists(os.path.dirname(results_path)):
                     os.makedirs(os.path.dirname(results_path))
@@ -401,7 +478,7 @@ def eval_models(args, api, device=None):
         results_metadata_df.to_pickle(metadata_path)
 
 
-def run_evaluation(input_path: str, api: bool):
+def run_evaluation(input_path: str, api: bool, model_name: str):
     args = read_as_defaultdict(input_path)
 
     global QUESTIONS_DF, QUESTIONS_METADATA, OPTIONS_DF, ANSWERS_DF
@@ -409,16 +486,9 @@ def run_evaluation(input_path: str, api: bool):
 
 
     if api:
-        eval_models(args, api)
+        eval_models(args, api, model_name)
     else:
         device = 'cuda' if torch.cuda.is_available() else 'cpu'
         print('device:', device)
         with torch.inference_mode():
-            eval_models(args, False, device)
-
-
-def dir_path(string):
-    if os.path.isdir(string):
-        return string
-    else:
-        raise NotADirectoryError(string)
+            eval_models(args, False, device, model_name)

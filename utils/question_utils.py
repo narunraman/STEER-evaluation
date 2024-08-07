@@ -7,8 +7,8 @@ from utils.utils import get_option_letters, flatten_list
 
 SUFFIX_OPTIONS = {
     'mc':"\nAnswer by writing the option letter corresponding to the correct option. WRITE ONLY A SINGLE LETTER. \n\nCorrect Answer: ",
-    'explain-answer': "\nBegin by explaining your reasoning in 2-3 sentences, enclosed in triple quotes. After your explanation, select and state the correct answer by writing 'Correct Answer: ' followed by your choice. BEGIN WITH YOUR EXPLANATION AND WRITE THE CORRECT ANSWER AT THE END",
-    'explanation': "\nBriefly explain your reasoning in triple quotes.",
+    'explain-answer': "\nLet's think step by step. Begin by explaining your reasoning in 2-3 sentences, enclosed in triple quotes. After your explanation, select and state the correct answer by writing 'Correct Answer: ' followed by your choice. BEGIN WITH YOUR EXPLANATION AND WRITE THE CORRECT ANSWER AT THE END",
+    'explanation': "\nLet's think step by step. Briefly explain your reasoning in triple quotes.",
 }
 
 
@@ -56,7 +56,9 @@ def reconstruct_context(prefix, questions, outputs, chat_type):
                  as a dictionary. For other types, it concatenates questions and outputs in order, separated by new lines.
 
     Example usage:
-    context = reconstruct_context("Hello", ["How are you?"], ["I'm good, thanks!"], 'textual')
+    > context = reconstruct_context("Hello", ["How are you?"], ["I'm good, thanks!"], 'list')
+    > print(context)
+    > [{'role': 'user', 'content': "Hello\nHow are you?"}, {'role': 'assistant', 'content': "I'm good, thanks!"}]
     """
     # For chat models like Falcon Instruct
     if chat_type == 'textual':
@@ -238,7 +240,7 @@ def merge_dfs(questions_df, options_df, questions_metadata=None, answers_df=None
         return options_df.merge(questions_df, on='question_id', how='left').merge(questions_metadata, on='question_id', how='left')
     return pd.merge(options_df, questions_df, on='question_id', how='left')
 
-def get_test_questions(base_id, questions_df, options_df, params):
+def get_test_questions(base_id, questions_df, options_df, params, answers_df = None, replace_answer = False):
     """
     Generate formatted test questions and their options based on specified parameters, including permutations of options.
 
@@ -268,6 +270,20 @@ def get_test_questions(base_id, questions_df, options_df, params):
         question_id = question['question_id']
         question_text = question['question_text']
         options = options_df[options_df['question_id'] == question_id]
+        
+        # if params['robust_calibration'] then add an option for 'None of the above'
+        if params['robust_calibration']:
+            assert answers_df is not None, "Need to pass in answers_df to generate 'None of the above' option"
+            answers = answers_df[answers_df['question_id'] == question_id]
+            if replace_answer:
+                correct_option_id = answers[answers['correct'] == 1]['option_id'].values[0]
+                options.loc[options['option_id'] == correct_option_id, 'option_text'] = 'None of the above'
+            else:
+                correct_option_id = answers[answers['correct'] == 1]['option_id'].values[0]
+                random_option_id = answers[answers['correct'] == 0]['option_id'].sample().values[0]
+                while random_option_id == correct_option_id:
+                    random_option_id = answers[answers['correct'] == 0]['option_id'].sample().values[0]
+                options.loc[options['option_id'] == random_option_id, 'option_text'] = 'None of the above'
         
         # Shuffle options and generate permutation
         options, permutation = shuffle_and_permute_options(options)

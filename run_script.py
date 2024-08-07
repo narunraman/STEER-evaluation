@@ -27,17 +27,16 @@ import os
 import concurrent.futures
 
 # External packages
-import pandas as pd
 
 # Local packages
-from utils.inference_utils import dir_path, run_evaluation
-from utils.utils import get_input_paths
+from utils.inference_utils import run_evaluation
+from utils.utils import get_input_paths, dir_path
 from utils.logger_utils import JobLogger
 
-CONFIG_DIR = 'configurations/'
-ELEMENTS_DIR = 'elements/'
+CONFIG_DIR = '/var/steer/configurations/'
+ELEMENTS_DIR = '/var/steer/elements/'
 
-def main(task_names, api, config_dir):
+def main(task_names, api, config_dir, model_name):
     """
     Main function to run evaluations on a set of elements.
 
@@ -50,12 +49,12 @@ def main(task_names, api, config_dir):
         None
     """
     job_configs = get_input_paths(task_names=task_names, config_dir=config_dir)
-    max_threads = os.cpu_count() or 1  # Use all available cores, default to 1 if not detected
 
     if type(task_names) == str:
-        run_evaluation(job_configs[0][1], api)
+        run_evaluation(job_configs['input_path'], api, model_name)
     else:
-
+        max_threads = os.cpu_count() or 1  # Use all available cores, default to 1 if not detected
+        # raise NotImplementedError
         with concurrent.futures.ThreadPoolExecutor(max_workers=max_threads) as executor:
             # Submit all jobs to the executor
             future_to_job = {executor.submit(run_evaluation, job_config[1], api): job_config[0] for job_config in job_configs}
@@ -73,14 +72,19 @@ def main(task_names, api, config_dir):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser('Instruction style')
     parser.add_argument('--task-name', '-t', type=str, help="Elements to evaluate")
+    parser.add_argument('--model-name', '-m', type=str, help="Name of the model to use for inference", default='all')
     parser.add_argument('--elements-dir', '-e', type=dir_path, nargs='?', default=ELEMENTS_DIR, help="Path to where the elements database is kept")
     parser.add_argument('--config-dir', '-c', type=dir_path, nargs='?', default=CONFIG_DIR, help="Path to where the configurations are kept")
     parser.add_argument('-api', action='store_true', help='Flag that runs inference on only api models')
     args = parser.parse_args()
-    if args.task_name == 'all':
-        assert os.path.exists(args.element_dir), 'Path to elements is not at current working directory, supply the directory with --element-dir'
-        elements = next(os.walk(args.element_dir))[1]
-        job_loggers = {element: JobLogger('logs', element) for element in elements}
-        main(elements, args.api, args.config_dir)
+    print(f'\n\n {args.config_dir} \n\n')
+    # TODO: currently only supports single task name 'all' is not supported
+    # if args.task_name == 'all':
+    #     assert os.path.exists(args.element_dir), 'Path to elements is not at current working directory, supply the directory with --element-dir'
+    #     elements = next(os.walk(args.element_dir))[1]
+    #     job_loggers = {element: JobLogger('logs', element) for element in elements}
+    #     main(elements, args.api, args.config_dir, None)
+    if args.model_name == 'all':
+        main(args.task_name, args.api, args.config_dir, None)
     else:
-        main(args.task_name, args.api, args.config_dir)
+        main(args.task_name, args.api, args.config_dir, args.model_name)

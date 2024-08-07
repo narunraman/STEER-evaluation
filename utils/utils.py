@@ -8,6 +8,14 @@ from string import ascii_uppercase
 import pandas as pd
 import torch
 
+
+
+def dir_path(string):
+    if os.path.isdir(string):
+        return string
+    else:
+        raise NotADirectoryError(string)
+
 def get_chat_type(model_name):
     if 'gpt' in model_name.lower() or 'chat' in model_name.lower() or ('mistralai' in model_name.lower() and 'instruct' in model_name.lower()):
         return 'list'
@@ -46,8 +54,10 @@ def get_gpu_memory(max_gpus=None):
     return gpu_memory
 
 
-def load_dfs(filepath):
+def load_dfs(filepath, as_dict = False):
     print(filepath)
+    if as_dict:
+        return {'questions_df': pd.read_pickle(filepath+'questions.pkl'), 'questions_metadata': pd.read_pickle(filepath+'questions_metadata.pkl'), 'options_df': pd.read_pickle(filepath+'options.pkl'), 'answers_df': pd.read_pickle(filepath+'answers.pkl')}
     return pd.read_pickle(filepath+'questions.pkl'), pd.read_pickle(filepath+'questions_metadata.pkl'), pd.read_pickle(filepath+'options.pkl'), pd.read_pickle(filepath+'answers.pkl')
 
 def flatten_list(matrix):
@@ -68,18 +78,18 @@ def print_chat(messages):
         print(f"{message['role'].upper():}", message['content'])
 
 
-def get_input_paths(task_names, config_dir):
+def get_input_paths(task_names: str | list, config_dir: str) -> list[dict[str, str]] | dict[str, str]:
     if type(task_names) == str:
         if not os.path.exists(os.path.join(config_dir, task_names + '.json')):
-            print('Creating default config file')
+            print(f'Creating default config file in {config_dir}')
             write_default_config(config_dir, task_names)
-        return [(task_names, config_dir + task_names + '.json')]
+        return {'task_name': task_names, 'input_path': config_dir + task_names + '.json'}
     elif type(task_names) == list:
         for task_name in task_names:
             if not os.path.exists(config_dir + task_name + '.json'):
                 print('Creating default config file')
                 write_default_config(config_dir, task_name)
-        return [(task_name, config_dir + task_name + '.json') for task_name in task_names]
+        return [{'task_name': task_name, 'input_path': config_dir + task_name + '.json'} for task_name in task_names]
 
 
 def write_default_config(base_dir, task_name):
@@ -133,3 +143,132 @@ class ParameterGrid:
             product_length = reduce(mul, (len(v) for v in grid.values()), 1)
             total_length += product_length
         return total_length
+    
+
+def merge_dfs(questions_df, options_df, answers_df, questions_metadata=None):
+    """
+    Merge DataFrames containing questions, options, answers, and metadata.
+
+    Args:
+        questions_df (pandas.DataFrame): DataFrame containing questions.
+        options_df (pandas.DataFrame): DataFrame containing options.
+        answers_df (pandas.DataFrame): DataFrame containing answers.
+        questions_metadata (pandas.DataFrame): DataFrame containing questions metadata.
+
+    Returns:
+        pandas.DataFrame: Merged DataFrame.
+    """
+    df = pd.merge(options_df, questions_df, on='question_id', how='inner')
+    # print(df)
+    df = pd.merge(df, answers_df, on=['question_id', 'option_id'])
+    if questions_metadata is not None:
+        df = pd.merge(df, questions_metadata, on='question_id', how='inner')
+    return df
+
+def get_base_ids(questions_df):
+    """
+    Get unique base IDs from the questions DataFrame.
+
+    Args:
+        questions_df (pandas.DataFrame): DataFrame containing questions.
+
+    Returns:
+        list: List of unique base IDs.
+    """
+    return questions_df['question_id'].str.split('_').str[0].unique().tolist()
+
+def get_max_base_id(questions_df):
+    """
+    Get the maximum base ID from the questions DataFrame.
+
+    Args:
+        questions_df (pandas.DataFrame): DataFrame containing questions.
+
+    Returns:
+        int: Maximum base ID.
+    """
+    base_ids = [int(base_id) for base_id in get_base_ids(questions_df)]
+    return max(base_ids)
+
+
+def get_related_questions(questions_df, base_id):
+    """
+    Get questions related to a specific base ID.
+
+    Args:
+        questions_df (pandas.DataFrame): DataFrame containing questions.
+        base_id (str): Base ID to filter the questions.
+
+    Returns:
+        pandas.DataFrame: DataFrame containing related questions.
+    """
+    return questions_df[questions_df['question_id'].str.startswith(f"{base_id}_")]
+
+
+def get_related_options(options_df, base_id, sub_id=None):
+    """
+    Get options related to a specific base ID.
+
+    Args:
+        options_df (pandas.DataFrame): DataFrame containing options.
+        base_id (str): Base ID to filter the options.
+
+    Returns:
+        pandas.DataFrame: DataFrame containing related options.
+    """
+    if sub_id:
+        return options_df[options_df['question_id'] == f"{base_id}_{sub_id}"]
+    return options_df[options_df['question_id'].str.startswith(f"{base_id}_")]
+
+def get_related_answer(answers_df, base_id, sub_id=None):
+    
+    if sub_id:
+        try:
+            selected_answers_df = answers_df[answers_df['question_id'] == f"{base_id}_{sub_id}"]['correct'].tolist()
+        except KeyError:
+            selected_answers_df = answers_df[answers_df['question_id'] == f"{base_id}_{sub_id}"]['correct_answer'].tolist()
+        try:
+            return ascii_uppercase[selected_answers_df.index(1)]
+        except ValueError:
+            return ascii_uppercase[selected_answers_df.index(True)]
+    curr_answers = answers_df[answers_df['question_id'].str.startswith(f"{base_id}_")].groupby('option_id')
+    try:
+        return [ascii_uppercase[curr_answers.get_group(option_id)['correct'].tolist().index(1)] for option_id in curr_answers.groups]
+    except ValueError:
+        return [ascii_uppercase[curr_answers.get_group(option_id)['correct'].tolist().index(True)] for option_id in curr_answers.groups]
+
+def get_unique_questions(questions_df, base_id):
+    """
+    Get unique questions related to a specific base ID.
+
+    Args:
+        questions_df (pandas.DataFrame): DataFrame containing questions.
+        base_id (str): Base ID to filter the questions.
+
+    Returns:
+        pandas.DataFrame: DataFrame containing unique questions.
+    """
+    return questions_df[questions_df['question_id'].str.startswith(f"{base_id}_")].drop_duplicates(subset=['question_text'])
+
+
+def row_to_mcqs(base_id, df):
+    """
+    Convert a row to multiple-choice question (MCQ) string.
+
+    Args:
+        base_id (str): Base ID to convert to MCQ string.
+        df (pandas.DataFrame): Merged DataFrame containing questions, options, and answers.
+    Returns:
+        list: list of MCQ strings.
+    """
+    questions = get_unique_questions(df, base_id)['question_text'].tolist()
+    mcq_string = []
+    for i, question in enumerate(questions):
+        curr_string = f"{question}\n"
+        options = get_related_options(df, base_id, str(i))['option_text'].tolist()
+        answer = get_related_answer(df, base_id, str(i))
+        for i, option in enumerate(options):
+            curr_string += f"{chr(65 + i)}. {option}\n"
+        curr_string +=f"\nCorrect Answer: {answer}" 
+        mcq_string.append(curr_string)
+    return mcq_string

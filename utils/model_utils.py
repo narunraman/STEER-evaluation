@@ -5,10 +5,9 @@ from collections import defaultdict
 from math import exp
 import traceback
 # External packages
-from openai import OpenAI, AzureOpenAI
+from openai import OpenAI, AzureOpenAI, AsyncAzureOpenAI
 from transformers import AutoTokenizer, AutoModel, AutoModelForCausalLM
 import torch
-from accelerate import Accelerator
 # Local packages
 from utils.utils import get_gpu_memory, normalize_dict
 
@@ -117,8 +116,111 @@ class GPTClient:
         else:
             return response.choices[0].message.content
 
-
+class AsyncGPTClient:
+    def __init__(self, client='azure'):
+        if client.lower() == 'azure':
+            self.client = AsyncAzureOpenAI(
+                api_key=os.environ['AZURE_OPENAI_API_KEY'],  
+                api_version="2024-02-01",
+                azure_endpoint = os.environ['AZURE_OPENAI_ENDPOINT']
+            )
+        elif client.lower() == 'openai':
+            self.client = OpenAI(
+                api_key=os.environ['OPENAI_API_KEY']
+            )
     
+    async def get_completion(
+        self,
+        messages: list[dict[str, str]],
+        model: str = "gpt-4-1106-preview",
+        max_tokens=500,
+        temperature=0,
+        stop=None,
+        seed=123,
+        tools=None,
+        logprobs=None,  # whether to return log probabilities of the output tokens or not. If true, returns the log probabilities of each output token returned in the content of message..
+        top_logprobs=None,
+    ) -> str:
+        params = {
+            "model": model,
+            "messages": messages,
+            "max_tokens": max_tokens,
+            "temperature": temperature,
+            "stop": stop,
+            "seed": seed,
+            "logprobs": logprobs,
+            "top_logprobs": top_logprobs,
+        }
+        if tools:
+            params["tools"] = tools
+
+        completion = await self.client.chat.completions.create(**params)
+        return completion
+
+    async def get_explanation(
+        self,
+        messages: list[dict[str, str]],
+        model: str = 'gpt-4-1106-preview',
+        max_tokens = 500,
+        temperature = 0,
+        stop = None,
+        seed = 123, 
+        tools = None,
+        logprobs = None,
+        top_logprobs=None,
+    ) -> str:
+        response = await self.get_completion(
+            messages,
+            model,
+            max_tokens,
+            temperature,
+            stop,
+            seed,
+            tools,
+            logprobs,
+            top_logprobs
+        )
+        return response.choices[0].message.content
+    
+    async def get_answer(
+        self,
+        valid_tokens,
+        messages: list[dict[str, str]],
+        model: str = 'gpt-4',
+        max_tokens = 500,
+        temperature = 0,
+        stop = None,
+        seed = 123,
+        tools = None,
+        logprobs = None,
+        top_logprobs=None,
+    ) -> dict:
+            
+            response = await self.get_completion(
+                messages,
+                model,
+                max_tokens,
+                temperature,
+                stop,
+                seed,
+                tools,
+                logprobs,
+                top_logprobs 
+            )
+            if logprobs:
+                top_responses = response.choices[0].logprobs.content[0].top_logprobs
+                output = defaultdict(lambda: 0)
+                for logprob in top_responses:
+                    for valid_token in valid_tokens:
+                        if valid_token.startswith(logprob.token.upper()):
+                            output[logprob.token] = exp(logprob.logprob)*100
+                    if len(output) == len(valid_tokens):
+                        break
+                output = normalize_dict(output)
+                return max(output, key=output.get), output 
+            else:
+                return response.choices[0].message.content
+            
 
 #########################################################################################
 #########################################################################################
@@ -133,6 +235,10 @@ class GPTClient:
 #########################################################################################
 
 MODEL_PATH = '/home/narunram/scratch/models/'
+
+def set_model_path(path: str):
+    global MODEL_PATH
+    MODEL_PATH = path
 
 def get_flash_attention_models(model_name: str):
     if 'llama' in model_name.lower() or 'falcon' in model_name.lower() or 'mistral' in model_name.lower() or 'mixtral' in model_name.lower() or 'jamba' in model_name.lower() or 'dbrx' in model_name.lower():
