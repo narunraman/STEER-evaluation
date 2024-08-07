@@ -304,8 +304,11 @@ def load_model_tokenizer(model_path: str, model_name: str, device: str = "cuda",
     
     kwargs = build_kwargs(device, model_name, num_gpus, max_gpu_mem)
     
-    model_path = os.path.join(model_path, model_name, 'snapshots/')
-    model_path = os.path.join(model_path, os.listdir(model_path)[0])
+    if os.path.exists(os.path.join(model_path, model_name, 'snapshots/')):
+        model_path = os.path.join(model_path, model_name, 'snapshots/')
+        model_path = os.path.join(model_path, os.listdir(model_path)[0])
+    else:
+        model_path = os.path.join(model_path, model_name)
     print('Loading model from:', model_path) 
     try:
         model, tokenizer = load_model(model_path, kwargs)

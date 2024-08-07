@@ -13,6 +13,7 @@ visualizer.py
 
 dispatch.py
 slurm_dispatcher.py
+dispatcher.py
 Slurm.py
 slurm_scripts/*
 outputs/*
